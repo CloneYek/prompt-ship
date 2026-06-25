@@ -1,0 +1,19 @@
+package com.xiaoyu.promptship.common;
+
+import lombok.Data;
+
+import java.io.Serializable;
+
+/**
+ * 删除请求包装类
+ */
+@Data
+public class DeleteRequest implements Serializable {
+
+    /**
+     * 主键ID
+     */
+    private Long id;
+
+    private static final long serialVersionUID = 1L;
+}
