@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-layout-header class="header">
     <div class="header-inner">
       <RouterLink to="/" class="brand-link">
@@ -8,8 +8,9 @@
 
       <nav class="nav-links">
         <RouterLink to="/">首页</RouterLink>
-        <a href="#cases">案例广场</a>
-        <a href="#prompt-box">开始创作</a>
+        <a href="/#cases">案例广场</a>
+        <a href="/#prompt-box">开始创作</a>
+        <RouterLink v-if="isAdmin" to="/admin/users">用户管理</RouterLink>
       </nav>
 
       <div class="user-login-status">
@@ -23,6 +24,8 @@
             </button>
             <template #overlay>
               <a-menu>
+                <a-menu-item key="profile" @click="goProfileEdit">个人编辑</a-menu-item>
+                <a-menu-divider />
                 <a-menu-item key="logout" @click="handleLogout">退出登录</a-menu-item>
               </a-menu>
             </template>
@@ -50,6 +53,8 @@ const displayName = computed(
   () => userStore.loginUser?.userName || userStore.loginUser?.userAccount || '用户',
 )
 const userInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
+// 菜单只做前端展示控制，管理员接口仍由后端权限校验兜底。
+const isAdmin = computed(() => userStore.loginUser?.userRole === 'admin')
 
 onMounted(() => {
   if (!userStore.loaded) {
@@ -65,6 +70,10 @@ const goLogin = () => {
 
 const goRegister = () => {
   router.push('/user/register')
+}
+
+const goProfileEdit = () => {
+  router.push('/user/profile/edit')
 }
 
 const handleLogout = async () => {
@@ -136,9 +145,11 @@ const handleLogout = async () => {
   color: #4b5563;
   font-size: 15px;
   font-weight: 600;
+  text-decoration: none;
 }
 
-.nav-links a:hover {
+.nav-links a:hover,
+.nav-links a.router-link-active {
   color: #2f7cff;
 }
 
