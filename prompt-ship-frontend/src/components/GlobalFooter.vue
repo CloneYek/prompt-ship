@@ -12,18 +12,14 @@ const currentYear = new Date().getFullYear()
 
 <style scoped>
 .footer {
-  background: #efefef;
+  background: #f8fbff;
   text-align: center;
-  padding: 20px;
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  padding: 24px;
 }
 
 .copyright {
   margin: 0;
-  color: #666;
+  color: #6b7280;
   font-size: 14px;
 }
 </style>

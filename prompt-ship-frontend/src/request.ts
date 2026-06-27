@@ -21,7 +21,7 @@ myAxios.interceptors.request.use(
 myAxios.interceptors.response.use(
   function (response) {
     const { data } = response
-    // 未登录
+    // 未登录时跳转登录页
     if (data.code === 40100) {
       if (
         !response.request.responseURL.includes('user/get/login') &&
