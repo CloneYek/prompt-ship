@@ -2,6 +2,14 @@ target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+tmp
+!**/src/main/resources/template/*.json
+!**/src/main/resources/banner.txt
+
+### CUSTOM ###
+application-local.yml
+**/src/main/resources/template/1.json
+**/src/main/resources/banner.txt
 
 ### STS ###
 .apt_generated
