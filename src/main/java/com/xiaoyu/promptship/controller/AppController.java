@@ -15,6 +15,7 @@ import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -95,7 +96,7 @@ public class AppController {
      */
     @GetMapping("/list/my")
     @AuthCheck
-    public BaseResponse<Page<AppVO>> listMyAppVOByPage(AppQueryRequest queryRequest,
+    public BaseResponse<Page<AppVO>> listMyAppVOByPage(@ParameterObject AppQueryRequest queryRequest,
                                                         HttpServletRequest httpRequest) {
         Page<AppVO> appPage = appService.listMyAppVOByPage(queryRequest, httpRequest);
         return ResultUtils.success(appPage);
@@ -108,7 +109,7 @@ public class AppController {
      * @return 脱敏后的应用分页数据
      */
     @GetMapping("/list/good")
-    public BaseResponse<Page<AppVO>> listGoodAppVOByPage(AppQueryRequest queryRequest) {
+    public BaseResponse<Page<AppVO>> listGoodAppVOByPage(@ParameterObject AppQueryRequest queryRequest) {
         Page<AppVO> appPage = appService.listGoodAppVOByPage(queryRequest);
         return ResultUtils.success(appPage);
     }
@@ -150,7 +151,7 @@ public class AppController {
      */
     @GetMapping("/admin/list")
     @AuthCheck(mustRole = "admin")
-    public BaseResponse<Page<AppVO>> listAppVOByPageByAdmin(AppQueryRequest queryRequest) {
+    public BaseResponse<Page<AppVO>> listAppVOByPageByAdmin(@ParameterObject AppQueryRequest queryRequest) {
         Page<AppVO> appPage = appService.listAppVOByPageByAdmin(queryRequest);
         return ResultUtils.success(appPage);
     }

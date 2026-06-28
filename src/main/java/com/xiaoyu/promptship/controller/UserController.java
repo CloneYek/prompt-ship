@@ -17,6 +17,7 @@ import com.xiaoyu.promptship.model.vo.LoginUserVO;
 import com.xiaoyu.promptship.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -140,7 +141,7 @@ public class UserController {
      */
     @GetMapping("/page")
     @AuthCheck(mustRole = "admin")
-    public BaseResponse<Page<LoginUserVO>> page(UserQueryRequest queryRequest) {
+    public BaseResponse<Page<LoginUserVO>> page(@ParameterObject UserQueryRequest queryRequest) {
         Page<LoginUserVO> userPage = userService.pageUsers(queryRequest);
         return ResultUtils.success(userPage);
     }
