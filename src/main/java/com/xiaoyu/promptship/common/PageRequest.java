@@ -1,11 +1,13 @@
 package com.xiaoyu.promptship.common;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * 分页请求封装类
  */
-@Data
+@Getter
+@Setter
 public class PageRequest {
 
     /**

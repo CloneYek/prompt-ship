@@ -11,6 +11,7 @@ import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.mapper.UserMapper;
 import com.xiaoyu.promptship.model.dto.UserCreateRequest;
+import com.xiaoyu.promptship.model.dto.UserQueryRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateRequest;
 import com.xiaoyu.promptship.model.entity.User;
@@ -233,13 +234,27 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     /**
-     * 分页获取用户列表()
-     * @param page 分页参数
+     * 分页获取用户列表（脱敏）
+     * @param queryRequest 查询请求
      * @return
      */
     @Override
-    public Page<LoginUserVO> pageUsers(Page<User> page) {
-        Page<User> userPage = this.page(page);
+    public Page<LoginUserVO> pageUsers(UserQueryRequest queryRequest) {
+        Page<User> page = new Page<>(queryRequest.getPageNum(), queryRequest.getPageSize());
+
+        QueryWrapper wrapper = new QueryWrapper();
+        if (CharSequenceUtil.isNotBlank(queryRequest.getUserName())) {
+            wrapper.like(User::getUserName, queryRequest.getUserName());
+        }
+        if (CharSequenceUtil.isNotBlank(queryRequest.getUserAccount())) {
+            wrapper.like(User::getUserAccount, queryRequest.getUserAccount());
+        }
+        if (CharSequenceUtil.isNotBlank(queryRequest.getUserRole())) {
+            wrapper.eq(User::getUserRole, queryRequest.getUserRole());
+        }
+        wrapper.orderBy(User::getCreateTime, false);
+
+        Page<User> userPage = this.page(page, wrapper);
         List<LoginUserVO> voList = userPage.getRecords().stream()
                 .map(this::buildLoginUserVO)
                 .toList();

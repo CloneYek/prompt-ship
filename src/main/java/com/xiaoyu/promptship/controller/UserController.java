@@ -8,6 +8,7 @@ import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.model.dto.UserCreateRequest;
 import com.xiaoyu.promptship.model.dto.UserLoginRequest;
+import com.xiaoyu.promptship.model.dto.UserQueryRequest;
 import com.xiaoyu.promptship.model.dto.UserRegisterRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateRequest;
@@ -134,13 +135,13 @@ public class UserController {
     /**
      * 分页获取用户列表（脱敏，管理员）。
      *
-     * @param page 分页参数
+     * @param queryRequest 查询请求
      * @return 脱敏后的用户分页数据
      */
     @GetMapping("/page")
     @AuthCheck(mustRole = "admin")
-    public BaseResponse<Page<LoginUserVO>> page(Page<User> page) {
-        Page<LoginUserVO> userPage = userService.pageUsers(page);
+    public BaseResponse<Page<LoginUserVO>> page(UserQueryRequest queryRequest) {
+        Page<LoginUserVO> userPage = userService.pageUsers(queryRequest);
         return ResultUtils.success(userPage);
     }
 

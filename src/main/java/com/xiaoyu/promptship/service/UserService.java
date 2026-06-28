@@ -3,6 +3,7 @@ package com.xiaoyu.promptship.service;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.service.IService;
 import com.xiaoyu.promptship.model.dto.UserCreateRequest;
+import com.xiaoyu.promptship.model.dto.UserQueryRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.UserUpdateRequest;
 import com.xiaoyu.promptship.model.entity.User;
@@ -97,8 +98,8 @@ public interface UserService extends IService<User> {
     /**
      * 分页获取用户列表（脱敏）
      *
-     * @param page 分页参数
+     * @param queryRequest 查询请求
      * @return 脱敏后的用户分页数据
      */
-    Page<LoginUserVO> pageUsers(Page<User> page);
+    Page<LoginUserVO> pageUsers(UserQueryRequest queryRequest);
 }

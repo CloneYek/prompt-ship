@@ -27,7 +27,9 @@ public class GlobalExceptionHandler {
         StringJoiner joiner = new StringJoiner("；");
         e.getBindingResult().getFieldErrors().forEach(error ->
                 joiner.add(error.getDefaultMessage()));
-        return ResultUtils.error(ErrorCode.PARAMS_ERROR, joiner.toString());
+        String errorMsg = joiner.toString();
+        log.error("参数校验失败：{}", errorMsg);
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, errorMsg);
     }
 
     /**
