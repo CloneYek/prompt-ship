@@ -22,7 +22,6 @@ public class AppCreateRequest implements Serializable {
     /**
      * 应用名称
      */
-    @NotBlank(message = "应用名称不能为空")
     @Size(max = 256, message = "应用名称长度不能超过 256 位")
     private String appName;
 

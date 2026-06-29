@@ -51,7 +51,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         User currentUser = userService.getLoginUser(httpRequest);
 
         App app = new App();
-        app.setAppName(request.getAppName());
+        //暂时默认appName为提示词的前12位
+        String appName = CharSequenceUtil.isNotBlank(request.getAppName())
+                ? request.getAppName()
+                : CharSequenceUtil.subPre(request.getInitPrompt(), 12);
+        app.setAppName(appName);
         app.setInitPrompt(request.getInitPrompt());
         app.setUserId(currentUser.getId());
         // 暂时默认生成多文件

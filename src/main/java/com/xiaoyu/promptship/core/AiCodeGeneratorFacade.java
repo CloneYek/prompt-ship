@@ -34,10 +34,10 @@ public class AiCodeGeneratorFacade {
      * @param codeGenTypeEnum 代码生成类型
      * @return 保存目录
      */
-    public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum) {
+    public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeEnum,Long appId) throws BusinessException {
         ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR);
         Object result = executeAiCall(userMessage, codeGenTypeEnum);
-        return CodeFileSaverExecutor.executeSaver(result, codeGenTypeEnum);
+        return CodeFileSaverExecutor.executeSaver(result, codeGenTypeEnum, appId);
     }
 
     /**
@@ -47,10 +47,10 @@ public class AiCodeGeneratorFacade {
      * @param codeGenTypeEnum 代码生成类型
      * @return 流式代码内容
      */
-    public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum) {
+    public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnum codeGenTypeEnum, Long appId) throws BusinessException {
         ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.PARAMS_ERROR);
         Flux<String> flux = executeAiCallStream(userMessage, codeGenTypeEnum);
-        return attachSaveOnComplete(flux, codeGenTypeEnum);
+        return attachSaveOnComplete(flux, codeGenTypeEnum, appId);
     }
 
     /**
@@ -84,7 +84,7 @@ public class AiCodeGeneratorFacade {
      * @param type 代码生成类型
      * @return 透传原始流的 Flux
      */
-    private Flux<String> attachSaveOnComplete(Flux<String> flux, CodeGenTypeEnum type) {
+    private Flux<String> attachSaveOnComplete(Flux<String> flux, CodeGenTypeEnum type, Long appId) {
         StringBuilder builder = new StringBuilder();
         return flux
                 .doOnNext(builder::append)
@@ -92,7 +92,7 @@ public class AiCodeGeneratorFacade {
                     try {
                         String completeCode = builder.toString();
                         Object result = CodeParserExecutor.executeParser(completeCode, type);
-                        File saveDir = CodeFileSaverExecutor.executeSaver(result, type);
+                        File saveDir = CodeFileSaverExecutor.executeSaver(result, type,appId);
                         log.info("代码保存成功，路径：{}", saveDir.getAbsolutePath());
                     } catch (Exception e) {
                         log.error("代码保存失败", e);
