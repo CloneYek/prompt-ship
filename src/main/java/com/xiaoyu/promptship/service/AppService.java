@@ -115,4 +115,14 @@ public interface AppService extends IService<App> {
      * @return 流式代码内容（首个元素为应用元数据 JSON）
      */
     Flux<String> chatToGenCode(AppCreateRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 部署应用（用户用）。将 code_output 目录下的文件复制到 code_deploy 目录，
+     * 生成唯一的 deployKey 作为子目录名，返回可公开访问的 URL。
+     *
+     * @param appId       应用 id
+     * @param httpRequest HTTP 请求
+     * @return 可访问的部署 URL，格式为 ${部署域名}/{deployKey}
+     */
+    String deployApp(Long appId, HttpServletRequest httpRequest);
 }

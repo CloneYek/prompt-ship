@@ -1,7 +1,9 @@
 package com.xiaoyu.promptship.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.CharSequenceUtil;
+import cn.hutool.core.util.RandomUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mybatisflex.core.paginate.Page;
@@ -28,6 +30,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +111,79 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 Flux.just(buildInit(appId)),
                 chunkFlux
         );
+    }
+
+    /**
+     * 部署应用（用户用）。
+     * <ol>
+     *   <li>校验应用存在性与用户权限（仅本人可部署）</li>
+     *   <li>若已有 deployKey 则直接返回 URL（每个 app 只部署一次）</li>
+     *   <li>校验代码是否已生成</li>
+     *   <li>生成唯一的 6 位 deployKey（大小写字母 + 数字）</li>
+     *   <li>将 code_output 目录下文件复制到 code_deploy/{deployKey}</li>
+     *   <li>写入 deployKey 和 deployedTime</li>
+     * </ol>
+     *
+     * @param appId       应用 id
+     * @param httpRequest HTTP 请求
+     * @return 可公开访问的部署 URL
+     */
+    @Override
+    public String deployApp(Long appId, HttpServletRequest httpRequest) {
+        // 1. 获取当前登录用户
+        User currentUser = userService.getLoginUser(httpRequest);
+
+        // 2. 查询应用，校验存在性
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+
+        // 3. 校验权限：仅本人可以部署
+        ThrowUtils.throwIf(!app.getUserId().equals(currentUser.getId()),
+                ErrorCode.NO_AUTH_ERROR, "无权部署该应用");
+
+        // 4. 已有 deployKey 则直接返回（每个 app 只生成一次）
+        if (CharSequenceUtil.isNotBlank(app.getDeployKey())) {
+            return AppConstant.CODE_DEPLOY_HOST + "/" + app.getDeployKey() + "/";
+        }
+
+        // 5. 验证代码是否已生成（检查 code_output 下的临时文件目录）
+        String codeDir = AppConstant.CODE_OUTPUT_ROOT_DIR + "/" + app.getCodeGenType() + "_" + appId;
+        ThrowUtils.throwIf(!FileUtil.exist(codeDir),
+                ErrorCode.OPERATION_ERROR, "该应用尚未生成代码，请先生成后再部署");
+
+        // 6. 生成唯一的 6 位 deployKey
+        String deployKey = generateUniqueDeployKey();
+
+        // 7. 将源目录下的文件复制到部署目录（只复制内容，不复制源目录名本身）
+        String deployDir = AppConstant.CODE_DEPLOY_ROOT_DIR + "/" + deployKey;
+        FileUtil.mkdir(deployDir);
+        File[] files = FileUtil.ls(codeDir);
+        for (File file : files) {
+            FileUtil.copy(file.getAbsolutePath(), deployDir + "/" + file.getName(), true);
+        }
+
+        // 8. 写入 deployKey 和 deployedTime
+        app.setDeployKey(deployKey);
+        app.setDeployedTime(LocalDateTime.now());
+        boolean updated = this.updateById(app);
+        ThrowUtils.throwIf(!updated, new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败，请稍后重试"));
+
+        return AppConstant.CODE_DEPLOY_HOST + "/" + deployKey + "/";
+    }
+
+    /**
+     * 生成唯一的 6 位 deployKey（大小写字母 + 数字），与数据库已有 key 不重复。
+     */
+    private String generateUniqueDeployKey() {
+        String key;
+        int maxRetries = 20;
+        do {
+            key = RandomUtil.randomString(RandomUtil.BASE_CHAR + RandomUtil.BASE_NUMBER, 6);
+            if (--maxRetries < 0) {
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成部署标识失败，请稍后重试");
+            }
+        } while (this.count(new QueryWrapper().eq(App::getDeployKey, key)) > 0);
+        return key;
     }
 
     /**

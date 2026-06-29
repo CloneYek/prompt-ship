@@ -7,6 +7,7 @@ import com.xiaoyu.promptship.common.ResultUtils;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.model.dto.AppCreateRequest;
+import com.xiaoyu.promptship.model.dto.AppDeployRequest;
 import com.xiaoyu.promptship.model.dto.AppQueryRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
@@ -82,6 +83,21 @@ public class AppController {
         );
 
         return emitter;
+    }
+
+    /**
+     * 部署应用（用户）。将 code_output 下已生成的代码复制到 code_deploy，
+     * 返回可公开访问的 URL。
+     *
+     * @param request 部署请求（appId）
+     * @return 部署 URL，格式为 ${部署域名}/{deployKey}
+     */
+    @PostMapping("/deploy")
+    @AuthCheck
+    public BaseResponse<String> deployApp(@Valid @RequestBody AppDeployRequest request,
+                                          HttpServletRequest httpRequest) {
+        String deployUrl = appService.deployApp(request.getAppId(), httpRequest);
+        return ResultUtils.success(deployUrl);
     }
 
     /**
