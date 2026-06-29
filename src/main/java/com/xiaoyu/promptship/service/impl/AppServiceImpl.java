@@ -2,10 +2,13 @@ package com.xiaoyu.promptship.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.text.CharSequenceUtil;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.xiaoyu.promptship.constant.AppConstant;
+import com.xiaoyu.promptship.core.AiCodeGeneratorFacade;
 import com.xiaoyu.promptship.exception.BusinessException;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
@@ -23,9 +26,11 @@ import com.xiaoyu.promptship.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 应用 服务层实现。
@@ -38,6 +43,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AiCodeGeneratorFacade aiCodeGeneratorFacade;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 创建应用（用户用）
@@ -67,6 +77,62 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         ThrowUtils.throwIf(!saved, new BusinessException(ErrorCode.SYSTEM_ERROR, "创建失败，请稍后重试"));
 
         return app.getId();
+    }
+
+    /**
+     * 创建应用并与 AI 对话生成代码（流式）
+     * <p>
+     * SSE 事件格式：
+     * <ul>
+     *   <li>{@code {"i":123}} — 首个事件，纯数字为 appId</li>
+     *   <li>{@code {"d":"..."}} — 代码生成块（token 级）</li>
+     *   <li>{@code event:done} — 流正常结束（Controller 层发送）</li>
+     * </ul>
+     * 使用单字母 key 以减少网络传输开销。
+     *
+     * @param request     创建请求（提示词、应用名称）
+     * @param httpRequest HTTP 请求
+     * @return 流式 JSON 事件序列
+     */
+    @Override
+    public Flux<String> chatToGenCode(AppCreateRequest request, HttpServletRequest httpRequest) {
+        long appId = this.createApp(request, httpRequest);
+
+        Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(
+                request.getInitPrompt(), CodeGenTypeEnum.MULTI_FILE, appId);
+
+        // 将每个 AI token 包装为 {"d":"..."}，单字母 key 减少传输量
+        Flux<String> chunkFlux = aiFlux.map(this::buildChunk);
+
+        return Flux.concat(
+                Flux.just(buildInit(appId)),
+                chunkFlux
+        );
+    }
+
+    /**
+     * 构建 {"i":appId} 事件
+     */
+    private String buildInit(long appId) {
+        return toJson(Map.of("i", appId));
+    }
+
+    /**
+     * 构建 {"d":"token"} 事件
+     */
+    private String buildChunk(String token) {
+        return toJson(Map.of("d", token));
+    }
+
+    /**
+     * Map 序列化为单行 JSON
+     */
+    private String toJson(Map<String, Object> data) {
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("SSE 事件序列化失败", e);
+        }
     }
 
     /**

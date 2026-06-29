@@ -17,7 +17,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
 
 /**
  * 应用 控制层。
@@ -44,6 +47,41 @@ public class AppController {
                                         HttpServletRequest httpRequest) {
         long appId = appService.createApp(request, httpRequest);
         return ResultUtils.success(appId);
+    }
+
+    /**
+     * 创建应用并与 AI 流式对话生成代码（用户）。
+     *
+     * @param request 创建请求（提示词、应用名称）
+     * @return SSE 流式响应（首个事件为应用元数据，后续为代码块）
+     */
+    @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuthCheck
+    public SseEmitter chatToGenCode(@Valid @RequestBody AppCreateRequest request,
+                                    HttpServletRequest httpRequest) {
+        SseEmitter emitter = new SseEmitter(600000L);
+
+        Flux<String> flux = appService.chatToGenCode(request, httpRequest);
+        flux.subscribe(
+                chunk -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(chunk));
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> emitter.completeWithError(error),
+                () -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data(""));
+                    } catch (Exception e) {
+                        // 连接已断开，忽略
+                    }
+                    emitter.complete();
+                }
+        );
+
+        return emitter;
     }
 
     /**

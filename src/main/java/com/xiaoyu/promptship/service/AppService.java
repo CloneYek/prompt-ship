@@ -9,6 +9,7 @@ import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
 import com.xiaoyu.promptship.model.entity.App;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import jakarta.servlet.http.HttpServletRequest;
+import reactor.core.publisher.Flux;
 
 /**
  * 应用 服务层。
@@ -105,4 +106,13 @@ public interface AppService extends IService<App> {
     App getAppVOByIdByAdmin(Long id);
 
     // endregion
+
+    /**
+     * 创建应用并与 AI 对话生成代码（流式）
+     *
+     * @param request     创建请求（提示词、应用名称）
+     * @param httpRequest HTTP 请求
+     * @return 流式代码内容（首个元素为应用元数据 JSON）
+     */
+    Flux<String> chatToGenCode(AppCreateRequest request, HttpServletRequest httpRequest);
 }
