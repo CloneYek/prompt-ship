@@ -1,4 +1,4 @@
-package com.xiaoyu.promptship.model.dto;
+package com.xiaoyu.promptship.model.dto.user;
 
 import lombok.Data;
 

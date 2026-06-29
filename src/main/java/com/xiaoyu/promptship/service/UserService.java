@@ -2,10 +2,10 @@ package com.xiaoyu.promptship.service;
 
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.service.IService;
-import com.xiaoyu.promptship.model.dto.UserCreateRequest;
-import com.xiaoyu.promptship.model.dto.UserQueryRequest;
-import com.xiaoyu.promptship.model.dto.UserUpdateMyRequest;
-import com.xiaoyu.promptship.model.dto.UserUpdateRequest;
+import com.xiaoyu.promptship.model.dto.user.UserCreateRequest;
+import com.xiaoyu.promptship.model.dto.user.UserQueryRequest;
+import com.xiaoyu.promptship.model.dto.user.UserUpdateMyRequest;
+import com.xiaoyu.promptship.model.dto.user.UserUpdateRequest;
 import com.xiaoyu.promptship.model.entity.User;
 import com.xiaoyu.promptship.model.vo.LoginUserVO;
 import jakarta.servlet.http.HttpServletRequest;

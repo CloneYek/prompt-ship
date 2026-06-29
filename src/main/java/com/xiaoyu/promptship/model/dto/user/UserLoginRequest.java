@@ -1,4 +1,4 @@
-package com.xiaoyu.promptship.model.dto;
+package com.xiaoyu.promptship.model.dto.user;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -8,13 +8,13 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 用户创建请求（管理员用）
+ * 用户登录请求
  *
  * @author xiaoyu
  * @since 1.0
  */
 @Data
-public class UserCreateRequest implements Serializable {
+public class UserLoginRequest implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -32,17 +32,5 @@ public class UserCreateRequest implements Serializable {
     @NotBlank(message = "密码不能为空")
     @Size(min = 8, max = 32, message = "密码长度需在 8~32 位之间")
     private String userPassword;
-
-    /**
-     * 用户昵称
-     */
-    @NotBlank(message = "用户昵称不能为空")
-    @Size(max = 32, message = "用户昵称长度不能超过 32 位")
-    private String userName;
-
-    /**
-     * 用户角色：user/admin，不传则默认为 user
-     */
-    private String userRole;
 
 }
