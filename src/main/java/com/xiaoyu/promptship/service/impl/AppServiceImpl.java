@@ -190,7 +190,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      * 构建 {"i":appId} 事件
      */
     private String buildInit(long appId) {
-        return toJson(Map.of("i", appId));
+        return toJson(Map.of("i", String.valueOf(appId)));
     }
 
     /**

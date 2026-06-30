@@ -1,5 +1,8 @@
 package com.xiaoyu.promptship.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 import lombok.Data;
 
 import java.io.Serial;
@@ -21,6 +24,7 @@ public class AppVO implements Serializable {
     /**
      * id
      */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /**
@@ -61,6 +65,7 @@ public class AppVO implements Serializable {
     /**
      * 创建用户 id
      */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long userId;
 
     /**

@@ -1,4 +1,4 @@
-﻿import { message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '@/pages/HomeView.vue'
 import { useUserStore } from '@/stores/user'
@@ -12,6 +12,34 @@ const router = createRouter({
       component: HomeView,
       meta: {
         fullWidth: true,
+      },
+    },
+    {
+      path: '/app/my',
+      name: 'app-my',
+      component: () => import('@/pages/MyAppsPage.vue'),
+      meta: {
+        requiresLogin: true,
+      },
+    },
+    {
+      path: '/app/chat/new',
+      name: 'app-chat-new',
+      component: () => import('@/pages/AppChatPage.vue'),
+      meta: {
+        requiresLogin: true,
+        fullWidth: true,
+        hideFooter: true,
+      },
+    },
+    {
+      path: '/app/:id/chat',
+      name: 'app-chat-detail',
+      component: () => import('@/pages/AppChatPage.vue'),
+      meta: {
+        requiresLogin: true,
+        fullWidth: true,
+        hideFooter: true,
       },
     },
     {
@@ -102,3 +130,4 @@ router.beforeEach(async (to) => {
 })
 
 export default router
+
