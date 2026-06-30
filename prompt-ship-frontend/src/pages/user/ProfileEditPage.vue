@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { updateMyUser } from '@/api/userController'
+import { updateMyUser } from '@/api/services/userService'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()

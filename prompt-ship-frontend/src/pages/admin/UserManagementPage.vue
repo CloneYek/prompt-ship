@@ -142,9 +142,15 @@
 import { computed, reactive, ref } from 'vue'
 import type { TablePaginationConfig } from 'ant-design-vue'
 import { message, type FormInstance } from 'ant-design-vue'
-import { createUser, listUsers, removeUser, updateUser } from '@/api/userController'
+import { createUser, listUsers, removeUser, updateUser } from '@/api/services/userService'
 
 type ModalMode = 'create' | 'edit'
+
+type UserFormState = Omit<API.UserCreateRequest, 'userName'> &
+  Omit<API.UserUpdateRequest, 'id'> & {
+    id?: number
+    userName?: string
+  }
 
 const loading = ref(false)
 const saving = ref(false)
@@ -162,7 +168,7 @@ const pagination = reactive<TablePaginationConfig>({
   showTotal: (total) => `共 ${total} 条`,
 })
 
-const formState = reactive<API.UserCreateRequest & API.UserUpdateRequest>({
+const formState = reactive<UserFormState>({
   id: undefined,
   userAccount: '',
   userPassword: '',
@@ -264,7 +270,7 @@ const handleSave = async () => {
       const res = await createUser({
         userAccount: formState.userAccount,
         userPassword: formState.userPassword,
-        userName: formState.userName,
+        userName: formState.userName || '',
         userRole: formState.userRole,
       })
       if (res.data.code !== 0) {
@@ -273,9 +279,13 @@ const handleSave = async () => {
       }
       message.success('创建用户成功')
     } else {
+      if (!formState.id) {
+        message.error('缺少用户 ID，无法更新')
+        return
+      }
       const res = await updateUser({
         id: formState.id,
-        userName: formState.userName,
+        userName: formState.userName || '',
         userAvatar: formState.userAvatar,
         userProfile: formState.userProfile,
         userRole: formState.userRole,

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { getLoginUser, userLogout } from '@/api/userController'
+import { getLoginUser, userLogout } from '@/api/services/userService'
 
 type LoginUser = API.LoginUserVO | null
 

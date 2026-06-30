@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="auth-page">
     <section class="auth-card">
       <div class="auth-visual">
@@ -75,7 +75,7 @@
 import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { userLogin } from '@/api/userController'
+import { userLogin } from '@/api/services/userService'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()

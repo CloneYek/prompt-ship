@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="auth-page register-page">
     <section class="auth-card">
       <div class="auth-visual">
@@ -85,7 +85,7 @@
 import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
-import { userRegister } from '@/api/userController'
+import { userRegister } from '@/api/services/userService'
 
 const router = useRouter()
 const submitting = ref(false)
