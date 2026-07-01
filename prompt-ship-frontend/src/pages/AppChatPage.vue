@@ -222,15 +222,17 @@ onMounted(async () => {
 
 <style scoped>
 .chat-page {
-  min-height: calc(100vh - 72px);
+  height: calc(100vh - 72px);
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(360px, 28vw) minmax(0, 1fr);
   background: #f7faff;
   color: #111827;
+  overflow: hidden;
 }
 
 .chat-sidebar {
-  min-height: calc(100vh - 72px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -284,6 +286,7 @@ onMounted(async () => {
 
 .message-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -313,6 +316,7 @@ onMounted(async () => {
 .message-card p {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.8;
 }
 
@@ -336,6 +340,7 @@ onMounted(async () => {
 
 .preview-panel {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -358,7 +363,7 @@ onMounted(async () => {
 
 .preview-frame-wrap {
   flex: 1;
-  min-height: 560px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #dce4f0;
   border-radius: 18px;
@@ -369,14 +374,12 @@ onMounted(async () => {
 .preview-frame-wrap iframe {
   width: 100%;
   height: 100%;
-  min-height: 560px;
   border: 0;
   background: #fff;
 }
 
 .preview-empty {
   height: 100%;
-  min-height: 560px;
   display: grid;
   place-content: center;
   text-align: center;
@@ -395,11 +398,14 @@ onMounted(async () => {
 
 @media (max-width: 980px) {
   .chat-page {
+    height: auto;
+    min-height: calc(100vh - 72px);
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .chat-sidebar {
-    min-height: auto;
+    min-height: 520px;
     border-right: none;
     border-bottom: 1px solid #e5eaf3;
   }
