@@ -2,6 +2,7 @@ package com.xiaoyu.promptship.service;
 
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.service.IService;
+import com.xiaoyu.promptship.model.dto.AppChatContinueRequest;
 import com.xiaoyu.promptship.model.dto.AppCreateRequest;
 import com.xiaoyu.promptship.model.dto.AppQueryRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateMyRequest;
@@ -115,6 +116,15 @@ public interface AppService extends IService<App> {
      * @return 流式代码内容（首个元素为应用元数据 JSON）
      */
     Flux<String> chatToGenCode(AppCreateRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 基于已有应用继续对话，AI 携带历史上下文生成代码（流式）。
+     *
+     * @param request     续聊请求（appId、新消息）
+     * @param httpRequest HTTP 请求
+     * @return 流式代码内容（首个元素为应用元数据 JSON）
+     */
+    Flux<String> chatContinue(AppChatContinueRequest request, HttpServletRequest httpRequest);
 
     /**
      * 部署应用（用户用）。将 code_output 目录下的文件复制到 code_deploy 目录，

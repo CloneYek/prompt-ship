@@ -34,7 +34,7 @@ import java.util.Map;
 public class CodeGenerator {
 
     /** 需要生成代码的数据库表名 */
-    private static final String[] TABLE_NAMES = {"app"};
+    private static final String[] TABLE_NAMES = {"chat_history"};
 
     /** 项目根包路径 */
     private static final String BASE_PACKAGE = "com.xiaoyu.promptship";

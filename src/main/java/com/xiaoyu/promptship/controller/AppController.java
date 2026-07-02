@@ -6,6 +6,7 @@ import com.xiaoyu.promptship.common.BaseResponse;
 import com.xiaoyu.promptship.common.ResultUtils;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
+import com.xiaoyu.promptship.model.dto.AppChatContinueRequest;
 import com.xiaoyu.promptship.model.dto.AppCreateRequest;
 import com.xiaoyu.promptship.model.dto.AppDeployRequest;
 import com.xiaoyu.promptship.model.dto.AppQueryRequest;
@@ -63,6 +64,41 @@ public class AppController {
         SseEmitter emitter = new SseEmitter(600000L);
 
         Flux<String> flux = appService.chatToGenCode(request, httpRequest);
+        flux.subscribe(
+                chunk -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(chunk));
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> emitter.completeWithError(error),
+                () -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data(""));
+                    } catch (Exception e) {
+                        // 连接已断开，忽略
+                    }
+                    emitter.complete();
+                }
+        );
+
+        return emitter;
+    }
+
+    /**
+     * 基于已有应用继续对话生成代码（用户，SSE 流式）。
+     *
+     * @param request 续聊请求（appId、新消息）
+     * @return SSE 流式响应（首个事件为应用元数据，后续为代码块）
+     */
+    @PostMapping(value = "/chat/continue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuthCheck
+    public SseEmitter chatContinue(@Valid @RequestBody AppChatContinueRequest request,
+                                   HttpServletRequest httpRequest) {
+        SseEmitter emitter = new SseEmitter(600000L);
+
+        Flux<String> flux = appService.chatContinue(request, httpRequest);
         flux.subscribe(
                 chunk -> {
                     try {

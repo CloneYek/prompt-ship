@@ -15,18 +15,23 @@ import com.xiaoyu.promptship.exception.BusinessException;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.mapper.AppMapper;
+import com.xiaoyu.promptship.model.dto.AppChatContinueRequest;
 import com.xiaoyu.promptship.model.dto.AppCreateRequest;
 import com.xiaoyu.promptship.model.dto.AppQueryRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
 import com.xiaoyu.promptship.model.entity.App;
+import com.xiaoyu.promptship.model.entity.ChatHistory;
 import com.xiaoyu.promptship.model.entity.User;
+import com.xiaoyu.promptship.model.enums.ChatHistoryRoleEnum;
 import com.xiaoyu.promptship.model.enums.CodeGenTypeEnum;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
+import com.xiaoyu.promptship.service.ChatHistoryService;
 import com.xiaoyu.promptship.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -42,6 +47,7 @@ import java.util.Map;
  * @since 1.0
  */
 @Service
+@Slf4j
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
 
     @Resource
@@ -49,6 +55,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private AiCodeGeneratorFacade aiCodeGeneratorFacade;
+
+    @Resource
+    private ChatHistoryService chatHistoryService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -86,6 +95,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     /**
      * 创建应用并与 AI 对话生成代码（流式）
      * <p>
+     * 流程：创建应用 → 保存用户消息到对话历史 → AI 流式生成（携带历史上下文）
+     * → 收集完整 AI 回复 → 保存 AI 回复到对话历史。
+     * </p>
+     * <p>
      * SSE 事件格式：
      * <ul>
      *   <li>{@code {"i":123}} — 首个事件，纯数字为 appId</li>
@@ -100,18 +113,100 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      */
     @Override
     public Flux<String> chatToGenCode(AppCreateRequest request, HttpServletRequest httpRequest) {
+        User currentUser = userService.getLoginUser(httpRequest);
+
+        // 1. 创建应用，获得 appId
         long appId = this.createApp(request, httpRequest);
 
-        Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStream(
+        // 2. 保存用户消息到对话历史
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getInitPrompt());
+
+        // 3. AI 流式生成代码，使用 per-app Service 携带历史上下文
+        Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStreamForApp(
                 request.getInitPrompt(), CodeGenTypeEnum.MULTI_FILE, appId);
 
-        // 将每个 AI token 包装为 {"d":"..."}，单字母 key 减少传输量
-        Flux<String> chunkFlux = aiFlux.map(this::buildChunk);
+        // 4. 收集完整 AI 回复，流结束后保存到对话历史
+        StringBuilder aiResponseBuilder = new StringBuilder();
 
         return Flux.concat(
                 Flux.just(buildInit(appId)),
-                chunkFlux
+                aiFlux
+                        .doOnNext(aiResponseBuilder::append)
+                        .map(this::buildChunk)
+                        .doOnComplete(() -> saveChatMessage(
+                                appId, currentUser.getId(), ChatHistoryRoleEnum.ASSISTANT,
+                                aiResponseBuilder.toString()))
         );
+    }
+
+    /**
+     * 基于已有应用继续对话（流式）。
+     * <p>
+     * 流程：校验权限 → 保存用户新消息 → AI 流式生成（携带该 App 的完整历史上下文）
+     * → 收集完整 AI 回复 → 保存到对话历史。
+     * </p>
+     *
+     * @param request     续聊请求（appId、新消息）
+     * @param httpRequest HTTP 请求
+     * @return 流式 JSON 事件序列
+     */
+    @Override
+    public Flux<String> chatContinue(AppChatContinueRequest request, HttpServletRequest httpRequest) {
+        User currentUser = userService.getLoginUser(httpRequest);
+        Long appId = request.getAppId();
+
+        // 1. 校验应用存在且属于当前用户
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        ThrowUtils.throwIf(!app.getUserId().equals(currentUser.getId()),
+                ErrorCode.NO_AUTH_ERROR, "无权操作该应用");
+
+        // 2. 保存用户新消息到对话历史
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getMessage());
+
+        // 3. 确定代码生成类型（沿用该应用创建时的类型）
+        CodeGenTypeEnum codeGenType = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
+        if (codeGenType == null) {
+            codeGenType = CodeGenTypeEnum.MULTI_FILE;
+        }
+
+        // 4. AI 流式生成代码，使用 per-app Service 携带历史上下文
+        Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStreamForApp(
+                request.getMessage(), codeGenType, appId);
+
+        // 5. 收集完整 AI 回复，流结束后保存到对话历史
+        StringBuilder aiResponseBuilder = new StringBuilder();
+
+        return Flux.concat(
+                Flux.just(buildInit(appId)),
+                aiFlux
+                        .doOnNext(aiResponseBuilder::append)
+                        .map(this::buildChunk)
+                        .doOnComplete(() -> saveChatMessage(
+                                appId, currentUser.getId(), ChatHistoryRoleEnum.ASSISTANT,
+                                aiResponseBuilder.toString()))
+        );
+    }
+
+    /**
+     * 保存一条对话消息到 chat_history 表。
+     *
+     * @param appId   应用 id
+     * @param userId  用户 id
+     * @param role    消息角色（user / assistant）
+     * @param content 消息内容
+     */
+    private void saveChatMessage(Long appId, Long userId, ChatHistoryRoleEnum role, String content) {
+        ChatHistory record = ChatHistory.builder()
+                .role(role.getValue())
+                .content(content)
+                .appId(appId)
+                .userId(userId)
+                .build();
+        boolean saved = chatHistoryService.save(record);
+        if (!saved) {
+            log.error("保存对话历史失败，appId: {}, role: {}", appId, role.getValue());
+        }
     }
 
     /**

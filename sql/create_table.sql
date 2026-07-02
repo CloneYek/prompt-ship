@@ -44,3 +44,20 @@ create table if not exists app
     INDEX idx_appName (appName),         -- 提升基于应用名称的查询性能
     INDEX idx_userId (userId)            -- 提升基于用户 ID 的查询性能
 )comment '应用' collate =utf8mb4_unicode_ci;
+
+-- 对话历史表
+create table chat_history
+(
+    id          bigint                               not null comment 'id' primary key,
+    role        varchar(32)                          not null comment '角色: user/assistant',
+    content     text                                 not null comment '消息内容',
+    appId       bigint                               not null comment '应用id',
+    userId      bigint                               not null comment '创建用户id',
+    codePath    varchar(512)                         null comment '该轮生成的代码文件目录路径，为空表示该消息不涉及代码生成',
+    editTime    datetime default CURRENT_TIMESTAMP   not null comment '编辑时间',
+    createTime  datetime default CURRENT_TIMESTAMP   not null comment '创建时间',
+    updateTime  datetime default CURRENT_TIMESTAMP   not null on update CURRENT_TIMESTAMP comment '更新时间',
+    isDelete    tinyint  default 0                   not null comment '是否删除',
+    INDEX idx_appId_createTime (appId, createTime),
+    INDEX idx_createTime (createTime)
+) comment '对话历史' collate = utf8mb4_unicode_ci;
