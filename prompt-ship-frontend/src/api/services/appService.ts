@@ -1,20 +1,32 @@
 import {
+  deleteApp,
+  deleteAppByAdmin,
   deployApp,
   getAppVoById,
+  getAppVoByIdByAdmin,
+  listAppVoByPageByAdmin,
   listGoodAppVoByPage,
   listMyAppVoByPage,
   updateApp,
+  updateAppByAdmin,
 } from '@/api/generated/appController'
 import { API_BASE_URL } from '@/request'
 
 export const INITIAL_PROMPT_STORAGE_KEY = 'prompt_ship_initial_prompt'
 export const DEFAULT_CODE_GEN_TYPE = 'multi_file'
+export const DEFAULT_APP_COVER =
+  'https://cdn.phototourl.com/free/2026-07-02-40ee78e7-12d4-47f5-9554-4fa777136113.png'
 
 export type AppId = string
 
-export type AppVO = Omit<API.AppVO, 'id' | 'userId'> & {
+export type AppCreator = Omit<API.LoginUserVO, 'id'> & {
+  id?: AppId
+}
+
+export type AppVO = Omit<API.AppVO, 'id' | 'userId' | 'user'> & {
   id?: AppId
   userId?: AppId
+  user?: AppCreator
 }
 
 export type AppPage = Omit<API.PageAppVO, 'records'> & {
@@ -26,6 +38,12 @@ export type AppPageParams = Omit<API.listMyAppVOByPageParams, 'pageNum'> & {
   pageNumber?: number
 }
 
+export type AdminAppPageParams = Omit<API.listAppVOByPageByAdminParams, 'pageNum' | 'userId'> & {
+  pageNum?: number
+  pageNumber?: number
+  userId?: AppId
+}
+
 export type ChatStreamHandlers = {
   onAppId?: (appId: AppId) => void
   onChunk?: (chunk: string) => void
@@ -34,14 +52,26 @@ export type ChatStreamHandlers = {
 
 const normalizeAppId = (id?: string | number) => (id == null ? undefined : String(id))
 
+const normalizeCreator = (user?: API.LoginUserVO): AppCreator | undefined => {
+  if (!user) {
+    return undefined
+  }
+  return {
+    ...user,
+    id: normalizeAppId(user.id),
+  }
+}
+
 const normalizeApp = (app?: API.AppVO): AppVO | undefined => {
   if (!app) {
     return undefined
   }
   return {
     ...app,
+    cover: app.cover || DEFAULT_APP_COVER,
     id: normalizeAppId(app.id),
     userId: normalizeAppId(app.userId),
+    user: normalizeCreator(app.user),
   }
 }
 
@@ -55,12 +85,16 @@ const normalizePage = (page?: API.PageAppVO): AppPage | undefined => {
   }
 }
 
-export const listMyApps = async (params: AppPageParams = {}) => {
+const withPageNum = <T extends { pageNum?: number; pageNumber?: number }>(params: T) => {
   const { pageNumber, ...restParams } = params
-  const res = await listMyAppVoByPage({
+  return {
     ...restParams,
     pageNum: pageNumber ?? restParams.pageNum,
-  })
+  }
+}
+
+export const listMyApps = async (params: AppPageParams = {}) => {
+  const res = await listMyAppVoByPage(withPageNum(params))
   return {
     ...res,
     data: {
@@ -71,10 +105,21 @@ export const listMyApps = async (params: AppPageParams = {}) => {
 }
 
 export const listGoodApps = async (params: AppPageParams = {}) => {
-  const { pageNumber, ...restParams } = params
-  const res = await listGoodAppVoByPage({
+  const res = await listGoodAppVoByPage(withPageNum(params))
+  return {
+    ...res,
+    data: {
+      ...res.data,
+      data: normalizePage(res.data.data),
+    },
+  }
+}
+
+export const listAdminApps = async (params: AdminAppPageParams = {}) => {
+  const { userId, ...restParams } = withPageNum(params)
+  const res = await listAppVoByPageByAdmin({
     ...restParams,
-    pageNum: pageNumber ?? restParams.pageNum,
+    userId: userId as unknown as number | undefined,
   })
   return {
     ...res,
@@ -96,23 +141,54 @@ export const getAppDetail = async (id: AppId) => {
   }
 }
 
+export const getAdminAppDetail = async (id: AppId) =>
+  getAppVoByIdByAdmin({ id: id as unknown as number })
+
 export const deployMyApp = (appId: AppId) => deployApp({ appId: appId as unknown as number })
 
-export const updateMyApp = updateApp
+export const updateMyApp = (body: { id: AppId; appName?: string }) =>
+  updateApp({
+    id: body.id as unknown as number,
+    appName: body.appName,
+  })
+
+export const deleteMyApp = (id: AppId) => deleteApp({ id: id as unknown as number })
+
+export const updateAdminApp = (body: {
+  id: AppId
+  appName?: string
+  cover?: string
+  priority?: number
+}) =>
+  updateAppByAdmin({
+    id: body.id as unknown as number,
+    appName: body.appName,
+    cover: body.cover,
+    priority: body.priority,
+  })
+
+export const deleteAdminApp = (id: AppId) => deleteAppByAdmin({ id: id as unknown as number })
+
+export const getAppCover = (app?: Pick<AppVO, 'cover'>) => app?.cover || DEFAULT_APP_COVER
+
+export const getAppCreatorName = (app?: Pick<AppVO, 'user' | 'userId'>) =>
+  app?.user?.userName || app?.user?.userAccount || (app?.userId ? '用户 ' + app.userId : '未知用户')
+
+export const getAppCreatorInitial = (app?: Pick<AppVO, 'user' | 'userId'>) =>
+  getAppCreatorName(app).slice(0, 1).toUpperCase()
 
 export const getGeneratedPreviewUrl = (appId?: AppId, codeGenType = DEFAULT_CODE_GEN_TYPE) => {
   if (!appId) {
     return ''
   }
-  return `${API_BASE_URL}/static/${codeGenType}_${appId}/`
+  return API_BASE_URL + '/static/' + codeGenType + '_' + appId + '/'
 }
 
-// SSE 需要逐段读取响应流；axios 更适合普通 JSON 请求，这里使用浏览器原生 fetch。
 export const chatToGenerateApp = async (
   body: API.AppCreateRequest,
   handlers: ChatStreamHandlers,
 ) => {
-  const response = await fetch(`${API_BASE_URL}/app/chat`, {
+  const response = await fetch(API_BASE_URL + '/app/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -122,7 +198,7 @@ export const chatToGenerateApp = async (
   })
 
   if (!response.ok || !response.body) {
-    throw new Error(`生成请求失败：${response.status}`)
+    throw new Error('生成请求失败：' + response.status)
   }
 
   const reader = response.body.getReader()

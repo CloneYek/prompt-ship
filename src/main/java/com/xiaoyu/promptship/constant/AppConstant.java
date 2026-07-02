@@ -33,4 +33,9 @@ public interface AppConstant {
      */
     String CODE_DEPLOY_HOST = "http://localhost";
 
+    /**
+     * 默认应用封面
+     */
+    String DEFAULT_APP_COVER = "https://cdn.phototourl.com/free/2026-07-02-40ee78e7-12d4-47f5-9554-4fa777136113.png";
+
 }

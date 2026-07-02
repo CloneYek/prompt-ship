@@ -8,7 +8,6 @@
       </div>
       <a-button type="primary" shape="round" @click="goHomeCreate">创建新应用</a-button>
     </section>
-
     <section class="apps-panel">
       <div class="toolbar">
         <a-input-search
@@ -18,40 +17,55 @@
           enter-button="搜索"
           allow-clear
           @search="handleSearch"
-        />
-        <a-button shape="round" :loading="loading" @click="fetchApps">刷新</a-button>
+        /><a-button shape="round" :loading="loading" @click="fetchApps">刷新</a-button>
       </div>
-
       <div v-if="apps.length" class="apps-grid">
         <article v-for="app in apps" :key="app.id" class="app-card">
-          <div class="app-cover" :class="getCoverClass(app)">
-            <img v-if="app.cover" :src="app.cover" :alt="app.appName" />
-            <div v-else class="cover-content">
-              <span>{{ app.codeGenType || 'Web App' }}</span>
-              <strong>{{ getAppInitial(app) }}</strong>
-            </div>
+          <div class="app-cover">
+            <img :src="getAppCover(app)" :alt="app.appName" /><a-tag class="code-type-tag">{{
+              app.codeGenType || 'web'
+            }}</a-tag>
           </div>
           <div class="app-body">
             <div class="app-title-row">
-              <h2>{{ app.appName || '未命名应用' }}</h2>
-              <a-tag :color="app.deployKey ? 'success' : 'default'">
-                {{ app.deployKey ? '已部署' : '未部署' }}
-              </a-tag>
+              <a-input
+                v-if="renamingAppId === app.id"
+                v-model:value="renameValue"
+                class="rename-input"
+                autofocus
+                @blur="submitRename(app)"
+                @keyup.enter="submitRename(app)"
+                @keyup.esc="cancelRename"
+              />
+              <h2 v-else>{{ app.appName || '未命名应用' }}</h2>
+              <a-tag :color="app.deployKey ? 'success' : 'default'">{{
+                app.deployKey ? '已部署' : '未部署'
+              }}</a-tag>
             </div>
             <p>{{ app.initPrompt || '暂无初始需求描述' }}</p>
             <div class="app-meta">
-              <span>创建于 {{ formatDate(app.createTime) }}</span>
-              <span>ID {{ app.id }}</span>
+              <span>创建于 {{ formatDate(app.createTime) }}</span
+              ><span>ID {{ app.id }}</span>
             </div>
             <div class="card-actions">
+              <a-button shape="round" @click="openDetail(app)">详情</a-button>
+              <a-button class="icon-button" shape="circle" title="重命名" @click="startRename(app)"
+                ><img :src="renameIcon" alt=""
+              /></a-button>
+              <a-button
+                class="icon-button"
+                shape="circle"
+                danger
+                title="删除"
+                @click="confirmDelete(app)"
+                ><img :src="deleteIcon" alt=""
+              /></a-button>
               <a-button type="primary" shape="round" @click="goAppChat(app)">查看对话</a-button>
             </div>
           </div>
         </article>
       </div>
-
       <a-empty v-else-if="!loading" class="empty-state" description="暂无应用" />
-
       <div class="pagination-row">
         <a-pagination
           v-model:current="pageNumber"
@@ -65,23 +79,64 @@
         />
       </div>
     </section>
+    <a-modal v-model:open="detailOpen" title="应用详情" :footer="null">
+      <a-descriptions v-if="detailApp" :column="1" bordered size="small">
+        <a-descriptions-item label="应用名称">{{
+          detailApp.appName || '未命名应用'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="创建人"
+          ><div class="creator-cell">
+            <a-avatar :src="detailApp.user?.userAvatar">{{
+              getAppCreatorInitial(detailApp)
+            }}</a-avatar
+            ><span>{{ getAppCreatorName(detailApp) }}</span>
+          </div></a-descriptions-item
+        >
+        <a-descriptions-item label="生成类型">{{
+          detailApp.codeGenType || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="创建时间">{{
+          formatDateTime(detailApp.createTime)
+        }}</a-descriptions-item>
+        <a-descriptions-item label="更新时间">{{
+          formatDateTime(detailApp.updateTime)
+        }}</a-descriptions-item>
+        <a-descriptions-item label="部署状态">{{
+          detailApp.deployKey ? '已部署' : '未部署'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="应用 ID">{{ detailApp.id }}</a-descriptions-item>
+      </a-descriptions>
+    </a-modal>
   </main>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
-import { listMyApps, type AppVO } from '@/api/services/appService'
+import {
+  deleteMyApp,
+  getAppCover,
+  getAppCreatorInitial,
+  getAppCreatorName,
+  listMyApps,
+  updateMyApp,
+  type AppVO,
+} from '@/api/services/appService'
+import deleteIcon from '@/resource/delete.svg'
+import renameIcon from '@/resource/rename.svg'
 
 const router = useRouter()
-
 const apps = ref<AppVO[]>([])
 const loading = ref(false)
 const searchText = ref('')
 const pageNumber = ref(1)
 const pageSize = ref(6)
 const total = ref(0)
+const renamingAppId = ref<string>()
+const renameValue = ref('')
+const detailOpen = ref(false)
+const detailApp = ref<AppVO>()
 
 const fetchApps = async () => {
   loading.value = true
@@ -101,43 +156,68 @@ const fetchApps = async () => {
     loading.value = false
   }
 }
-
 const handleSearch = () => {
   pageNumber.value = 1
   fetchApps()
 }
-
 const handlePageSizeChange = (_current: number, size: number) => {
   pageNumber.value = 1
   pageSize.value = size
   fetchApps()
 }
-
-const goHomeCreate = () => {
-  router.push('/#prompt-box')
+const startRename = (app: AppVO) => {
+  renamingAppId.value = app.id
+  renameValue.value = app.appName || ''
 }
-
-const goAppChat = (app: AppVO) => {
-  if (!app.id) {
+const cancelRename = () => {
+  renamingAppId.value = undefined
+  renameValue.value = ''
+}
+const submitRename = async (app: AppVO) => {
+  if (renamingAppId.value !== app.id || !app.id) return
+  const nextName = renameValue.value.trim()
+  if (!nextName || nextName === app.appName) {
+    cancelRename()
     return
   }
-  router.push(`/app/${app.id}/chat`)
-}
-
-const getAppInitial = (app: AppVO) => (app.appName || '应用').slice(0, 1)
-
-const getCoverClass = (app: AppVO) => {
-  const seed = Number(app.id?.slice(-2) || 0)
-  return ['cover-blue', 'cover-green', 'cover-ink', 'cover-coral'][seed % 4]
-}
-
-const formatDate = (date?: string) => {
-  if (!date) {
-    return '刚刚'
+  const res = await updateMyApp({ id: app.id, appName: nextName })
+  if (res.data.code === 0) {
+    message.success('重命名成功')
+    await fetchApps()
+  } else {
+    message.error(res.data.message || '重命名失败')
   }
-  return date.slice(0, 10)
+  cancelRename()
 }
-
+const confirmDelete = (app: AppVO) => {
+  if (!app.id) return
+  Modal.confirm({
+    title: '删除应用',
+    content: '确定删除「' + (app.appName || '未命名应用') + '」吗？删除后不可恢复。',
+    okText: '删除',
+    cancelText: '取消',
+    okType: 'danger',
+    async onOk() {
+      const res = await deleteMyApp(app.id!)
+      if (res.data.code === 0) {
+        message.success('删除成功')
+        await fetchApps()
+        return
+      }
+      message.error(res.data.message || '删除失败')
+    },
+  })
+}
+const openDetail = (app: AppVO) => {
+  detailApp.value = app
+  detailOpen.value = true
+}
+const goHomeCreate = () => router.push('/#prompt-box')
+const goAppChat = (app: AppVO) => {
+  if (app.id) router.push('/app/' + app.id + '/chat')
+}
+const formatDate = (date?: string) => date?.slice(0, 10) || '刚刚'
+const formatDateTime = (date?: string) => date?.replace('T', ' ').slice(0, 19) || '-'
 onMounted(fetchApps)
 </script>
 
@@ -145,7 +225,6 @@ onMounted(fetchApps)
 .my-apps-page {
   color: #111827;
 }
-
 .page-hero {
   display: flex;
   align-items: flex-end;
@@ -153,7 +232,6 @@ onMounted(fetchApps)
   gap: 24px;
   padding: 18px 0 30px;
 }
-
 .section-label {
   display: inline-block;
   margin-bottom: 10px;
@@ -161,21 +239,18 @@ onMounted(fetchApps)
   font-size: 14px;
   font-weight: 800;
 }
-
 .page-hero h1 {
   margin: 0;
   font-size: 34px;
   font-weight: 900;
   letter-spacing: 0;
 }
-
 .page-hero p {
   max-width: 680px;
   margin: 14px 0 0;
   color: #667085;
   line-height: 1.8;
 }
-
 .apps-panel {
   padding: 28px;
   border: 1px solid #e5eaf3;
@@ -183,32 +258,28 @@ onMounted(fetchApps)
   background: #fff;
   box-shadow: 0 18px 48px rgba(17, 58, 113, 0.08);
 }
-
 .toolbar,
 .app-title-row,
 .app-meta,
 .card-actions,
-.pagination-row {
+.pagination-row,
+.creator-cell {
   display: flex;
   align-items: center;
 }
-
 .toolbar {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
 }
-
 .search-input {
   max-width: 420px;
 }
-
 .apps-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 22px;
 }
-
 .app-card {
   overflow: hidden;
   border: 1px solid #edf1f7;
@@ -216,64 +287,32 @@ onMounted(fetchApps)
   background: #fff;
   box-shadow: 0 16px 38px rgba(17, 24, 39, 0.07);
 }
-
 .app-cover {
+  position: relative;
   height: 180px;
   color: #fff;
 }
-
 .app-cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-
-.cover-content {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 18px;
+.code-type-tag {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  margin: 0;
+  border: none;
+  color: #fff;
+  background: rgba(17, 24, 39, 0.72);
 }
-
-.cover-content span {
-  width: fit-content;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  font-weight: 800;
-}
-
-.cover-content strong {
-  font-size: 54px;
-  line-height: 1;
-}
-
-.cover-blue {
-  background: linear-gradient(135deg, #111827, #2f7cff);
-}
-
-.cover-green {
-  background: linear-gradient(135deg, #0f766e, #84cc16);
-}
-
-.cover-ink {
-  background: linear-gradient(135deg, #111827, #64748b);
-}
-
-.cover-coral {
-  background: linear-gradient(135deg, #f97316, #db2777);
-}
-
 .app-body {
   padding: 18px;
 }
-
 .app-title-row {
   justify-content: space-between;
   gap: 12px;
 }
-
 .app-title-row h2 {
   min-width: 0;
   margin: 0;
@@ -283,7 +322,10 @@ onMounted(fetchApps)
   font-size: 18px;
   font-weight: 900;
 }
-
+.rename-input {
+  min-width: 0;
+  flex: 1;
+}
 .app-body p {
   height: 48px;
   display: -webkit-box;
@@ -294,49 +336,49 @@ onMounted(fetchApps)
   color: #667085;
   line-height: 1.7;
 }
-
 .app-meta {
   justify-content: space-between;
   gap: 12px;
   color: #8a94a6;
   font-size: 12px;
 }
-
 .card-actions {
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 18px;
 }
-
+.icon-button img {
+  width: 16px;
+  height: 16px;
+}
 .empty-state {
   padding: 64px 0;
 }
-
 .pagination-row {
   justify-content: flex-end;
   margin-top: 28px;
 }
-
+.creator-cell {
+  gap: 10px;
+}
 @media (max-width: 1100px) {
   .apps-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-
 @media (max-width: 760px) {
   .page-hero,
   .toolbar {
     align-items: stretch;
     flex-direction: column;
   }
-
   .apps-panel {
     padding: 20px;
   }
-
   .apps-grid {
     grid-template-columns: 1fr;
   }
-
   .pagination-row {
     justify-content: center;
   }

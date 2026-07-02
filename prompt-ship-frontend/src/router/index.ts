@@ -52,6 +52,15 @@ const router = createRouter({
       },
     },
     {
+      path: '/admin/apps',
+      name: 'admin-apps',
+      component: () => import('@/pages/admin/AppManagementPage.vue'),
+      meta: {
+        requiresLogin: true,
+        requiredRole: 'admin',
+      },
+    },
+    {
       path: '/user/profile/edit',
       name: 'user-profile-edit',
       component: () => import('@/pages/user/ProfileEditPage.vue'),
@@ -130,4 +139,3 @@ router.beforeEach(async (to) => {
 })
 
 export default router
-

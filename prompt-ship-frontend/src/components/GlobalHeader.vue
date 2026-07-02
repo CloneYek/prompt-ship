@@ -11,6 +11,7 @@
         <a href="/#cases">案例广场</a>
         <a href="/#prompt-box">开始创作</a>
         <RouterLink v-if="isAdmin" to="/admin/users">用户管理</RouterLink>
+        <RouterLink v-if="isAdmin" to="/admin/apps">应用管理</RouterLink>
       </nav>
 
       <div class="user-login-status">

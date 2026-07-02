@@ -71,6 +71,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         app.setAppName(appName);
         app.setInitPrompt(request.getInitPrompt());
         app.setUserId(currentUser.getId());
+        app.setCover(AppConstant.DEFAULT_APP_COVER);
         // 暂时默认生成多文件
         app.setCodeGenType(CodeGenTypeEnum.MULTI_FILE.getValue());
         // 暂时默认优先级为普通
@@ -424,6 +425,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private AppVO buildAppVO(App app) {
         AppVO vo = new AppVO();
         BeanUtil.copyProperties(app, vo);
+        if (app.getUserId() != null) {
+            try {
+                vo.setUser(userService.getUserVOById(app.getUserId()));
+            } catch (BusinessException ignored) {
+                // User may have been deleted; keep app data readable.
+            }
+        }
         return vo;
     }
 

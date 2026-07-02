@@ -43,7 +43,7 @@ public class AppVO implements Serializable {
     private String initPrompt;
 
     /**
-     * 代码生成类型（枚举）
+     * 代码生成类型
      */
     private String codeGenType;
 
@@ -67,6 +67,11 @@ public class AppVO implements Serializable {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long userId;
+
+    /**
+     * 创建用户信息
+     */
+    private LoginUserVO user;
 
     /**
      * 创建时间
