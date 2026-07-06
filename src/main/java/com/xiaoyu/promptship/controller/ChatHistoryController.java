@@ -8,6 +8,7 @@ import com.xiaoyu.promptship.model.dto.ChatHistoryQueryRequest;
 import com.xiaoyu.promptship.model.vo.ChatHistoryVO;
 import com.xiaoyu.promptship.service.ChatHistoryService;
 import jakarta.annotation.Resource;
+import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +40,7 @@ public class ChatHistoryController {
     @GetMapping("/list")
     @AuthCheck
     public BaseResponse<CursorPage<ChatHistoryVO>> listChatHistory(
-            @ParameterObject ChatHistoryQueryRequest queryRequest) {
+            @Valid @ParameterObject ChatHistoryQueryRequest queryRequest) {
         CursorPage<ChatHistoryVO> page = chatHistoryService.listByAppIdCursor(
                 queryRequest.getAppId(),
                 queryRequest.getCursor(),

@@ -2,43 +2,68 @@
   <main class="chat-page">
     <aside class="chat-sidebar">
       <div class="app-title-row">
-        <RouterLink to="/" class="back-link">返回首页</RouterLink
-        ><a-tag :color="generationStatus.color">{{ generationStatus.text }}</a-tag>
+        <RouterLink to="/" class="back-link">返回首页</RouterLink>
+        <a-tag :color="generationStatus.color">{{ generationStatus.text }}</a-tag>
       </div>
       <h1>{{ appTitle }}</h1>
       <p class="app-subtitle">用自然语言描述需求，AI 会为你生成可预览的 Web 应用。</p>
-      <div class="message-list">
-        <article class="message-row user-row">
-          <div class="message-bubble user-bubble">
-            <p>{{ initialPrompt || '还没有输入应用需求' }}</p>
-          </div>
-          <a-avatar :src="userStore.loginUser?.userAvatar">{{ userInitial }}</a-avatar>
-        </article>
-        <article class="message-row ai-row">
-          <a-avatar :src="assistantAvatar" />
-          <div class="message-bubble ai-bubble">
-            <div class="message-role">PromptShip AI</div>
-            <p v-if="aiOutput">{{ aiOutput }}</p>
-            <p v-else class="muted-text">{{ emptyAiText }}</p>
-          </div>
+      <div ref="messageListRef" class="message-list">
+        <div v-if="loadingHistory" class="message-state">正在加载历史对话...</div>
+        <div v-else-if="!chatMessages.length" class="message-state">还没有对话，输入需求后开始生成。</div>
+        <article
+          v-for="chatMessage in chatMessages"
+          :key="chatMessage.id"
+          class="message-row"
+          :class="chatMessage.role === 'user' ? 'user-row' : 'ai-row'"
+        >
+          <template v-if="chatMessage.role === 'user'">
+            <div class="message-bubble user-bubble">
+              <p>{{ chatMessage.content }}</p>
+            </div>
+            <a-avatar :src="userStore.loginUser?.userAvatar">{{ userInitial }}</a-avatar>
+          </template>
+          <template v-else>
+            <a-avatar :src="assistantAvatar" />
+            <div class="message-bubble ai-bubble">
+              <div class="message-role">PromptShip AI</div>
+              <p v-if="!chatMessage.content" class="muted-text">
+                {{ chatMessage.streaming ? 'AI 正在生成回复...' : 'AI 暂无回复内容' }}
+              </p>
+              <div v-else class="step-list">
+                <section
+                  v-for="step in parseAssistantSteps(chatMessage.content)"
+                  :key="step.key"
+                  class="step-card"
+                >
+                  <div class="step-card-header">
+                    <span>{{ step.label }}</span>
+                    <strong>{{ step.title }}</strong>
+                  </div>
+                  <p>{{ step.content }}</p>
+                </section>
+              </div>
+            </div>
+          </template>
         </article>
       </div>
       <div class="chat-input-box">
         <a-textarea
           v-model:value="draftPrompt"
           :auto-size="{ minRows: 3, maxRows: 5 }"
-          placeholder="继续补充细节的能力将在后续接口支持后开放"
-          disabled
+          :placeholder="inputPlaceholder"
+          :disabled="loadingHistory"
+          @keydown.ctrl.enter.prevent="handleSubmit"
+          @keydown.meta.enter.prevent="handleSubmit"
         />
         <div class="chat-actions">
-          <span>{{ helperText }}</span
-          ><a-button
+          <span>{{ helperText }}</span>
+          <a-button
             type="primary"
             shape="round"
             :loading="generating"
-            :disabled="!canStart"
-            @click="startGeneration"
-            >{{ startButtonText }}</a-button
+            :disabled="!canSubmit"
+            @click="handleSubmit"
+            >{{ submitButtonText }}</a-button
           >
         </div>
       </div>
@@ -50,9 +75,9 @@
           <h2>{{ previewTitle }}</h2>
         </div>
         <div class="preview-actions">
-          <a-button :disabled="!previewUrl" shape="round" @click="reloadPreview">刷新预览</a-button
-          ><a-button :disabled="!previewUrl" shape="round" @click="openPreview">新窗口打开</a-button
-          ><a-button
+          <a-button :disabled="!previewUrl" shape="round" @click="reloadPreview">刷新预览</a-button>
+          <a-button :disabled="!previewUrl" shape="round" @click="openPreview">新窗口打开</a-button>
+          <a-button
             type="primary"
             shape="round"
             :loading="deploying"
@@ -82,10 +107,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
+  chatContinueApp,
   chatToGenerateApp,
   deployMyApp,
   getAppDetail,
@@ -94,8 +120,29 @@ import {
   type AppId,
   type AppVO,
 } from '@/api/services/appService'
+import {
+  listAppChatHistory,
+  type ChatHistoryRecord,
+  type ChatRole,
+} from '@/api/services/chatHistoryService'
 import { useUserStore } from '@/stores/user'
 import assistantAvatar from '@/resource/assistant-avatar.png'
+
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  content: string
+  streaming?: boolean
+}
+
+type AssistantStep = {
+  key: string
+  label: string
+  title: string
+  content: string
+}
+
+const HISTORY_PAGE_SIZE = 20
 
 const route = useRoute()
 const router = useRouter()
@@ -104,12 +151,15 @@ const currentAppId = ref<AppId>()
 const appDetail = ref<AppVO>()
 const initialPrompt = ref('')
 const draftPrompt = ref('')
-const aiOutput = ref('')
+const chatMessages = ref<ChatMessage[]>([])
+const loadingHistory = ref(false)
 const generating = ref(false)
 const generated = ref(false)
 const deploying = ref(false)
 const deployUrl = ref('')
 const previewKey = ref(0)
+const messageListRef = ref<HTMLElement>()
+let localMessageId = 0
 
 const userInitial = computed(() =>
   (userStore.loginUser?.userName || userStore.loginUser?.userAccount || '你')
@@ -125,72 +175,295 @@ const previewUrl = computed(() =>
 const previewTitle = computed(() =>
   currentAppId.value ? 'App #' + currentAppId.value : '生成中的应用',
 )
-const canStart = computed(
-  () => Boolean(initialPrompt.value.trim()) && !generating.value && !generated.value,
-)
-const emptyAiText = computed(() =>
-  generating.value ? 'AI 正在理解需求并生成代码...' : '提交需求后，这里会显示 AI 的生成过程。',
+const canSubmit = computed(() => Boolean(draftPrompt.value.trim()) && !generating.value && !loadingHistory.value)
+const inputPlaceholder = computed(() =>
+  currentAppId.value ? '继续描述你想调整的功能、样式或内容' : '描述你想生成的 Web 应用',
 )
 const helperText = computed(() =>
   currentAppId.value ? '当前应用 ID：' + currentAppId.value : '即将创建新应用',
 )
-const startButtonText = computed(() => (generated.value ? '已生成' : '开始生成'))
+const submitButtonText = computed(() => (currentAppId.value ? '发送' : '开始生成'))
 const generationStatus = computed(() =>
   generating.value
     ? { color: 'processing', text: '生成中' }
-    : generated.value
-      ? { color: 'success', text: '已完成' }
-      : { color: 'default', text: '待生成' },
+    : loadingHistory.value
+      ? { color: 'processing', text: '加载历史' }
+      : generated.value || currentAppId.value
+        ? { color: 'success', text: '可续聊' }
+        : { color: 'default', text: '待生成' },
 )
 
-const loadExistingApp = async (id: AppId) => {
+const createLocalMessageId = () => 'local-' + ++localMessageId
+
+const scrollMessagesToBottom = async () => {
+  await nextTick()
+  const messageList = messageListRef.value
+  if (messageList) {
+    messageList.scrollTop = messageList.scrollHeight
+  }
+}
+
+const toChatMessage = (record: ChatHistoryRecord, index: number): ChatMessage | undefined => {
+  if (record.role !== 'user' && record.role !== 'assistant') {
+    return undefined
+  }
+  return {
+    id: record.id || 'history-' + (record.createTime || index) + '-' + index,
+    role: record.role,
+    content: record.content || '',
+  }
+}
+
+const appendMessage = (role: ChatRole, content: string, streaming = false) => {
+  const chatMessage: ChatMessage = {
+    id: createLocalMessageId(),
+    role,
+    content,
+    streaming,
+  }
+  chatMessages.value.push(chatMessage)
+  void scrollMessagesToBottom()
+  return chatMessage
+}
+
+const updateMessage = (id: string, updater: (message: ChatMessage) => ChatMessage) => {
+  const index = chatMessages.value.findIndex((message) => message.id === id)
+  if (index < 0) {
+    return
+  }
+  chatMessages.value.splice(index, 1, updater(chatMessages.value[index]))
+  void scrollMessagesToBottom()
+}
+
+const parseAssistantSteps = (content: string): AssistantStep[] => {
+  const normalizedContent = content.trim()
+  if (!normalizedContent) {
+    return []
+  }
+
+  const stepPattern = /(^|\n)\s*STEP\s+(\d+)\s*(?::|：|-|—)?\s*([^\n]*)/gi
+  const matches = [...normalizedContent.matchAll(stepPattern)]
+
+  if (!matches.length) {
+    return [
+      {
+        key: 'plain',
+        label: 'AI',
+        title: '回复内容',
+        content: normalizedContent,
+      },
+    ]
+  }
+
+  const steps = matches.map((match, index) => {
+    const nextMatch = matches[index + 1]
+    const contentStart = (match.index ?? 0) + match[0].length
+    const contentEnd = nextMatch?.index ?? normalizedContent.length
+    const stepNumber = match[2]
+    const title = match[3]?.trim() || '步骤 ' + stepNumber
+    const stepContent = normalizedContent.slice(contentStart, contentEnd).trim()
+
+    return {
+      key: stepNumber + '-' + index,
+      label: 'STEP ' + stepNumber,
+      title,
+      content: stepContent || '该步骤暂无详细内容',
+    }
+  })
+
+  const introContent = normalizedContent.slice(0, matches[0]?.index ?? 0).trim()
+  if (introContent) {
+    steps.unshift({
+      key: 'intro',
+      label: 'AI',
+      title: '回复说明',
+      content: introContent,
+    })
+  }
+
+  return steps
+}
+
+const loadChatHistory = async (appId: AppId) => {
+  loadingHistory.value = true
+  const allRecords: ChatHistoryRecord[] = []
+  let cursor: string | undefined
+
+  try {
+    while (true) {
+      const res = await listAppChatHistory({
+        appId,
+        cursor,
+        pageSize: HISTORY_PAGE_SIZE,
+      })
+
+      if (res.data.code !== 0 || !res.data.data) {
+        throw new Error(res.data.message || '历史对话加载失败')
+      }
+
+      const page = res.data.data
+      allRecords.push(...page.records)
+
+      if (!page.hasMore || !page.nextCursor || page.nextCursor === cursor) {
+        break
+      }
+      cursor = page.nextCursor
+    }
+
+    chatMessages.value = allRecords
+      .map((record, index) => toChatMessage(record, index))
+      .filter(Boolean) as ChatMessage[]
+
+    if (!chatMessages.value.length && initialPrompt.value.trim()) {
+      chatMessages.value = [
+        {
+          id: 'fallback-init-prompt',
+          role: 'user',
+          content: initialPrompt.value.trim(),
+        },
+      ]
+    }
+    await scrollMessagesToBottom()
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '历史对话加载失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+const loadExistingApp = async (id: AppId, shouldLoadHistory = true) => {
   const res = await getAppDetail(id)
   if (res.data.code === 0 && res.data.data) {
     appDetail.value = res.data.data
     initialPrompt.value = res.data.data.initPrompt || ''
-    draftPrompt.value = initialPrompt.value
+    draftPrompt.value = ''
     currentAppId.value = id
     generated.value = true
+    if (shouldLoadHistory) {
+      await loadChatHistory(id)
+    }
     return
   }
   message.error(res.data.message || '应用加载失败')
 }
 
 const startGeneration = async () => {
-  if (!initialPrompt.value.trim()) {
+  const prompt = draftPrompt.value.trim()
+  if (!prompt) {
     message.warning('请先输入你想生成的应用需求')
     return
   }
+
+  initialPrompt.value = prompt
+  chatMessages.value = []
+  appendMessage('user', prompt)
+  const assistantMessage = appendMessage('assistant', '', true)
+  const assistantMessageId = assistantMessage.id
   generating.value = true
-  aiOutput.value = ''
   deployUrl.value = ''
+  draftPrompt.value = ''
+
   try {
     await chatToGenerateApp(
-      { initPrompt: initialPrompt.value.trim() },
+      { initPrompt: prompt },
       {
         onAppId: (appId) => {
           currentAppId.value = appId
-          router.replace('/app/' + appId + '/chat')
         },
         onChunk: (chunk) => {
-          aiOutput.value += chunk
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            content: message.content + chunk,
+          }))
         },
         onDone: () => {
+          updateMessage(assistantMessageId, (message) => ({
+            ...message,
+            streaming: false,
+          }))
           generated.value = true
         },
       },
     )
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      streaming: false,
+    }))
     generated.value = true
     message.success('应用生成完成')
   } catch (error) {
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      streaming: false,
+    }))
     message.error(error instanceof Error ? error.message : '生成失败，请稍后重试')
   } finally {
     generating.value = false
     sessionStorage.removeItem(INITIAL_PROMPT_STORAGE_KEY)
     if (currentAppId.value) {
-      await loadExistingApp(currentAppId.value).catch(() => undefined)
+      await loadExistingApp(currentAppId.value, false).catch(() => undefined)
       previewKey.value += 1
+      if (route.params.id !== currentAppId.value) {
+        await router.replace('/app/' + currentAppId.value + '/chat')
+      }
     }
+  }
+}
+
+const continueChat = async () => {
+  const appId = currentAppId.value
+  const prompt = draftPrompt.value.trim()
+  if (!appId || !prompt) {
+    return
+  }
+
+  appendMessage('user', prompt)
+  const assistantMessage = appendMessage('assistant', '', true)
+  const assistantMessageId = assistantMessage.id
+  generating.value = true
+  deployUrl.value = ''
+  draftPrompt.value = ''
+
+  try {
+    await chatContinueApp(appId, prompt, {
+      onChunk: (chunk) => {
+        updateMessage(assistantMessageId, (message) => ({
+          ...message,
+          content: message.content + chunk,
+        }))
+      },
+      onDone: () => {
+        updateMessage(assistantMessageId, (message) => ({
+          ...message,
+          streaming: false,
+        }))
+      },
+    })
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      streaming: false,
+    }))
+    message.success('回复生成完成')
+    previewKey.value += 1
+  } catch (error) {
+    updateMessage(assistantMessageId, (message) => ({
+      ...message,
+      streaming: false,
+    }))
+    message.error(error instanceof Error ? error.message : '继续对话失败，请稍后重试')
+  } finally {
+    generating.value = false
+  }
+}
+
+const handleSubmit = async () => {
+  if (!canSubmit.value) {
+    return
+  }
+  if (currentAppId.value) {
+    await continueChat()
+  } else {
+    await startGeneration()
   }
 }
 
@@ -279,7 +552,8 @@ onMounted(async () => {
 }
 .app-subtitle,
 .muted-text,
-.chat-actions span {
+.chat-actions span,
+.message-state {
   color: #667085;
 }
 .app-subtitle {
@@ -294,6 +568,11 @@ onMounted(async () => {
   flex-direction: column;
   gap: 18px;
   padding-right: 4px;
+}
+.message-state {
+  margin: auto;
+  text-align: center;
+  line-height: 1.7;
 }
 .message-row {
   gap: 10px;
@@ -332,6 +611,36 @@ onMounted(async () => {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.step-card {
+  padding: 12px;
+  border: 1px solid #dce5f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.step-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.step-card-header span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #1769e0;
+  background: #eaf2ff;
+  font-size: 12px;
+  font-weight: 900;
+}
+.step-card-header strong {
+  color: #111827;
+  font-size: 14px;
 }
 .chat-input-box {
   padding: 14px;

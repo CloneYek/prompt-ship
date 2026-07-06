@@ -15,6 +15,11 @@ declare namespace API {
     isDelete?: number
   }
 
+  type AppChatContinueRequest = {
+    appId: number
+    message: string
+  }
+
   type AppCreateRequest = {
     appName?: string
     initPrompt: string
@@ -69,6 +74,12 @@ declare namespace API {
     message?: string
   }
 
+  type BaseResponseCursorPageChatHistoryVO = {
+    code?: number
+    data?: CursorPageChatHistoryVO
+    message?: string
+  }
+
   type BaseResponseLoginUserVO = {
     code?: number
     data?: LoginUserVO
@@ -105,6 +116,22 @@ declare namespace API {
     message?: string
   }
 
+  type ChatHistoryVO = {
+    id?: number
+    role?: string
+    content?: string
+    appId?: number
+    userId?: number
+    createTime?: string
+  }
+
+  type CursorPageChatHistoryVO = {
+    records?: ChatHistoryVO[]
+    nextCursor?: string
+    hasMore?: boolean
+    pageSize?: number
+  }
+
   type deleteAppByAdminParams = {
     id: number
   }
@@ -139,6 +166,12 @@ declare namespace API {
     pageSize?: number
     sortField?: string
     sortOrder?: string
+  }
+
+  type listChatHistoryParams = {
+    appId: number
+    cursor?: string
+    pageSize?: number
   }
 
   type listGoodAppVOByPageParams = {

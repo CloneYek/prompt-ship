@@ -184,11 +184,13 @@ export const getGeneratedPreviewUrl = (appId?: AppId, codeGenType = DEFAULT_CODE
   return API_BASE_URL + '/static/' + codeGenType + '_' + appId + '/'
 }
 
-export const chatToGenerateApp = async (
-  body: API.AppCreateRequest,
+const readChatStream = async (
+  path: string,
+  body: unknown,
   handlers: ChatStreamHandlers,
+  errorPrefix: string,
 ) => {
-  const response = await fetch(API_BASE_URL + '/app/chat', {
+  const response = await fetch(API_BASE_URL + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -198,7 +200,7 @@ export const chatToGenerateApp = async (
   })
 
   if (!response.ok || !response.body) {
-    throw new Error('生成请求失败：' + response.status)
+    throw new Error(errorPrefix + response.status)
   }
 
   const reader = response.body.getReader()
@@ -254,3 +256,23 @@ export const chatToGenerateApp = async (
     handleEvent(buffer)
   }
 }
+
+export const chatToGenerateApp = async (
+  body: API.AppCreateRequest,
+  handlers: ChatStreamHandlers,
+) => readChatStream('/app/chat', body, handlers, '生成请求失败：')
+
+export const chatContinueApp = async (
+  appId: AppId,
+  content: string,
+  handlers: ChatStreamHandlers,
+) =>
+  readChatStream(
+    '/app/chat/continue',
+    {
+      appId: appId as unknown as number,
+      message: content,
+    },
+    handlers,
+    '继续对话请求失败：',
+  )

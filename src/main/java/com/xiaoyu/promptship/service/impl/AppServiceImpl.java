@@ -207,6 +207,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (!saved) {
             log.error("保存对话历史失败，appId: {}, role: {}", appId, role.getValue());
         }
+        else {
+            log.info("保存对话历史成功, appId: {}, role: {}", appId, role.getValue());
+        }
     }
 
     /**

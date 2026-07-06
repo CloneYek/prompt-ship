@@ -95,12 +95,6 @@
             <artifactId>langchain4j-reactor</artifactId>
             <version>1.1.0-beta7</version>
         </dependency>
-        <!--  langchain4j-redis 对话记忆持久化      -->
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-community-redis-spring-boot-starter</artifactId>
-            <version>1.1.0-beta7</version>
-        </dependency>
         <!--  Caffeine 本地缓存，缓存 per-app AI Service      -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
