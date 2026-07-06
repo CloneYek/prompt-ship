@@ -72,6 +72,21 @@ export async function chatToGenCode(body: API.AppCreateRequest, options?: { [key
   })
 }
 
+/** 此处后端没有提供注释 POST /app/chat/continue */
+export async function chatContinue(
+  body: API.AppChatContinueRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.SseEmitter>('/app/chat/continue', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
 /** 此处后端没有提供注释 POST /app/create */
 export async function createApp(body: API.AppCreateRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseLong>('/app/create', {

@@ -1,5 +1,6 @@
 package com.xiaoyu.promptship.model.dto;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.io.Serial;
@@ -24,6 +25,7 @@ public class ChatHistoryQueryRequest implements Serializable {
     /**
      * 应用 id（必填，按应用隔离查询）
      */
+    @NotNull(message = "应用 id 不能为空")
     private Long appId;
 
     /**

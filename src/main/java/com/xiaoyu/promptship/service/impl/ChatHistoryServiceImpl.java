@@ -106,11 +106,17 @@ public class ChatHistoryServiceImpl extends ServiceImpl<ChatHistoryMapper, ChatH
 
         // 游标条件：只查 createTime 大于游标值的数据
         if (cursor != null && !cursor.isEmpty()) {
-            LocalDateTime cursorTime = LocalDateTime.parse(cursor, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            wrapper.gt(ChatHistory::getCreateTime, cursorTime);
+            try {
+                LocalDateTime cursorTime = LocalDateTime.parse(cursor, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                wrapper.gt(ChatHistory::getCreateTime, cursorTime);
+            } catch (Exception e) {
+                log.warn("游标格式错误，忽略游标条件，从第一页开始查询。cursor: {}", cursor);
+                // 格式错误时忽略游标，从第一页查起，不影响用户体验
+            }
         }
 
-        wrapper.orderBy(ChatHistory::getCreateTime, true); // ASC，老的在前
+        wrapper.orderBy(ChatHistory::getCreateTime, true)
+                .orderBy(ChatHistory::getId, true); // ASC，老的在前；同一秒内按雪花 id 稳定排序
 
         // MyBatis-Flex 的 list 直接取前 N 条，不走传统分页
         wrapper.limit(fetchSize);
