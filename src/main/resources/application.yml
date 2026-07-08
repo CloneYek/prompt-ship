@@ -13,7 +13,7 @@ server:
   servlet:
     context-path: /api
     session:
-      persistent: false
+      persistent: true
 # springdoc-openapi
 springdoc:
   group-configs:

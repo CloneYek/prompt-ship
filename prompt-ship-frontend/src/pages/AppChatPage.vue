@@ -39,7 +39,7 @@
                     <span>{{ step.label }}</span>
                     <strong>{{ step.title }}</strong>
                   </div>
-                  <p>{{ step.content }}</p>
+                  <MarkdownContent :content="step.content" />
                 </section>
               </div>
             </div>
@@ -126,6 +126,7 @@ import {
   type ChatRole,
 } from '@/api/services/chatHistoryService'
 import { useUserStore } from '@/stores/user'
+import MarkdownContent from '@/components/MarkdownContent.vue'
 import assistantAvatar from '@/resource/assistant-avatar.png'
 
 type ChatMessage = {
