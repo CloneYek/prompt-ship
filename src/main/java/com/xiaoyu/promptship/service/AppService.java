@@ -10,6 +10,7 @@ import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
 import com.xiaoyu.promptship.model.entity.App;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 /**
@@ -135,4 +136,22 @@ public interface AppService extends IService<App> {
      * @return 可访问的部署 URL，格式为 ${部署域名}/{deployKey}
      */
     String deployApp(Long appId, HttpServletRequest httpRequest);
+
+    /**
+     * 创建 Vue 工程化应用并流式生成（SSE）。
+     *
+     * @param request     创建请求
+     * @param httpRequest HTTP 请求
+     * @return SseEmitter 流式响应
+     */
+    SseEmitter chatToGenVueApp(AppCreateRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 继续对话生成代码（SSE 流式），内部根据 app 的 codeGenType 自动分流到 Vue 或旧模式。
+     *
+     * @param request     续聊请求
+     * @param httpRequest HTTP 请求
+     * @return SseEmitter 流式响应
+     */
+    SseEmitter chatContinueSse(AppChatContinueRequest request, HttpServletRequest httpRequest);
 }

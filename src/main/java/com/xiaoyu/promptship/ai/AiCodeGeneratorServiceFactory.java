@@ -2,6 +2,8 @@ package com.xiaoyu.promptship.ai;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.xiaoyu.promptship.ai.tool.DependencyTool;
+import com.xiaoyu.promptship.ai.tool.FileTools;
 import com.xiaoyu.promptship.constant.AppConstant;
 import com.xiaoyu.promptship.service.ChatHistoryService;
 import dev.langchain4j.memory.ChatMemory;
@@ -56,6 +58,24 @@ public class AiCodeGeneratorServiceFactory {
             .build();
 
     /**
+     * Caffeine 缓存：appId → 绑定了独立 ChatMemory 和工具的 VueCodeGeneratorAgent
+     */
+    private final Cache<Long, VueCodeGeneratorAgent> vueAgentCache = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofMinutes(10))
+            .expireAfterWrite(Duration.ofMinutes(30))
+            .maximumSize(200)
+            .build();
+
+    /**
+     * Caffeine 缓存：appId → DependencyTool 实例，用于在 AI 生成完成后读取声明的依赖列表
+     */
+    private final Cache<Long, DependencyTool> dependencyToolCache = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofMinutes(10))
+            .expireAfterWrite(Duration.ofMinutes(30))
+            .maximumSize(200)
+            .build();
+
+    /**
      * 默认的单例 Service（无 ChatMemory），供非对话场景使用（如初始生成）。
      */
     @Bean
@@ -96,6 +116,53 @@ public class AiCodeGeneratorServiceFactory {
                     .chatMemory(chatMemory)
                     .build();
         });
+    }
+
+    /**
+     * 获取指定 App 的 Vue Agent（绑定工具的 AI 服务）。
+     * <p>
+     * 若缓存未命中，则创建新的 Agent 实例并装配工具：
+     * <ol>
+     *   <li>创建 {@link MessageWindowChatMemory}</li>
+     *   <li>从数据库加载历史对话到 ChatMemory</li>
+     *   <li>创建绑定到该 app 目录的 FileTools 和 DependencyTool</li>
+     *   <li>构建 VueCodeGeneratorAgent 代理</li>
+     * </ol>
+     * </p>
+     *
+     * @param appId 应用 id
+     * @return 绑定了工具和对话记忆的 Vue Agent 实例
+     */
+    public VueCodeGeneratorAgent getVueAgentForApp(Long appId) {
+        return vueAgentCache.get(appId, id -> {
+            ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(
+                    AppConstant.CHAT_MEMORY_MAX_MESSAGES);
+            chatHistoryService.loadChatHistoryToMemory(
+                    appId, chatMemory, AppConstant.CHAT_MEMORY_MAX_MESSAGES);
+
+            String basePath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_app_" + appId;
+            FileTools fileTools = new FileTools(basePath);
+            DependencyTool dependencyTool = new DependencyTool();
+            dependencyToolCache.put(appId, dependencyTool);
+
+            return AiServices.builder(VueCodeGeneratorAgent.class)
+                    .streamingChatModel(streamingChatModel)
+                    .chatMemory(chatMemory)
+                    .tools(fileTools, dependencyTool)
+                    .build();
+        });
+    }
+
+    /**
+     * 获取指定 App 的 DependencyTool，用于读取 AI 声明的依赖列表。
+     * 调用前需确保已通过 {@link #getVueAgentForApp} 创建了 Agent。
+     *
+     * @param appId 应用 id
+     * @return DependencyTool 实例（可能为空列表）
+     */
+    public DependencyTool getDependencyToolForApp(Long appId) {
+        DependencyTool tool = dependencyToolCache.getIfPresent(appId);
+        return tool != null ? tool : new DependencyTool();
     }
 
 }

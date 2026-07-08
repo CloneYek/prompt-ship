@@ -2,12 +2,14 @@ package com.xiaoyu.promptship.core;
 
 import com.xiaoyu.promptship.ai.AiCodeGeneratorService;
 import com.xiaoyu.promptship.ai.AiCodeGeneratorServiceFactory;
+import com.xiaoyu.promptship.ai.VueCodeGeneratorAgent;
 import com.xiaoyu.promptship.core.parser.CodeParserExecutor;
 import com.xiaoyu.promptship.core.saver.CodeFileSaverExecutor;
 import com.xiaoyu.promptship.exception.BusinessException;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.model.enums.CodeGenTypeEnum;
+import dev.langchain4j.service.TokenStream;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -114,6 +116,23 @@ public class AiCodeGeneratorFacade {
             case MULTI_FILE -> service.generateMultiFileCodeStream(userMessage);
             default -> throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "不支持生成的类型：" + type.getValue());
         };
+    }
+
+    /**
+     * Vue 工程化生成入口（流式，携带历史上下文）。
+     * <p>
+     * 返回 {@link TokenStream} 以支持工具调用流式输出。
+     * 与旧模式不同：文件由 AI 通过 write_file 工具直接写入磁盘，
+     * 无需走 parser/saver 流程。构建在流结束后由 Service 层驱动。
+     * </p>
+     *
+     * @param userMessage 用户提示词
+     * @param appId       应用 id
+     * @return TokenStream 流式工具调用
+     */
+    public TokenStream generateVueAppStream(String userMessage, Long appId) {
+        VueCodeGeneratorAgent agent = aiCodeGeneratorServiceFactory.getVueAgentForApp(appId);
+        return agent.generate(userMessage);
     }
 
     /**

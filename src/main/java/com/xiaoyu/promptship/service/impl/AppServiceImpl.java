@@ -5,12 +5,16 @@ import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.text.CharSequenceUtil;
 import cn.hutool.core.util.RandomUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
+import com.xiaoyu.promptship.ai.AiCodeGeneratorServiceFactory;
 import com.xiaoyu.promptship.constant.AppConstant;
 import com.xiaoyu.promptship.core.AiCodeGeneratorFacade;
+import com.xiaoyu.promptship.core.vue.VueProjectBuilder;
+import com.xiaoyu.promptship.core.vue.VueSkeletonCopier;
 import com.xiaoyu.promptship.exception.BusinessException;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
@@ -29,14 +33,20 @@ import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
 import com.xiaoyu.promptship.service.ChatHistoryService;
 import com.xiaoyu.promptship.service.UserService;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -57,7 +67,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private AiCodeGeneratorFacade aiCodeGeneratorFacade;
 
     @Resource
+    private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
+
+    @Resource
     private ChatHistoryService chatHistoryService;
+
+    @Resource
+    private VueSkeletonCopier vueSkeletonCopier;
+
+    @Resource
+    private VueProjectBuilder vueProjectBuilder;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -81,8 +100,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         app.setInitPrompt(request.getInitPrompt());
         app.setUserId(currentUser.getId());
         app.setCover(AppConstant.DEFAULT_APP_COVER);
-        // 暂时默认生成多文件
-        app.setCodeGenType(CodeGenTypeEnum.MULTI_FILE.getValue());
+        // 默认生成 Vue 工程化项目
+        app.setCodeGenType(CodeGenTypeEnum.VUE_APP.getValue());
         // 暂时默认优先级为普通
         app.setPriority(0);
 
@@ -189,6 +208,163 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     }
 
     /**
+     * 创建 Vue 工程化应用并流式生成（SSE）。
+     * <p>
+     * 流程：创建应用(VUE_APP) → 拷贝骨架 → 保存用户消息
+     * → AI 工具调用流式生成 → npm install/build → 保存 AI 回复。
+     * </p>
+     */
+    public SseEmitter chatToGenVueApp(AppCreateRequest request, HttpServletRequest httpRequest) {
+        //获取当前登录用户信息
+        User currentUser = userService.getLoginUser(httpRequest);
+        //创建应用
+        long appId = this.createApp(request, httpRequest);
+        //保存用户消息到数据库
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getInitPrompt());
+
+        try {
+            vueSkeletonCopier.copySkeleton(appId);
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "项目骨架初始化失败");
+        }
+
+        // 获取TokenStream流式对象
+        TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getInitPrompt(), appId);
+        // 转成Sse对象
+        return bridgeVueTokenStream(stream, appId, currentUser.getId());
+    }
+
+    /**
+     * 继续 Vue 工程化应用的对话（SSE）。
+     */
+    public SseEmitter chatContinueVueApp(AppChatContinueRequest request, HttpServletRequest httpRequest) {
+        User currentUser = userService.getLoginUser(httpRequest);
+        Long appId = request.getAppId();
+
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        ThrowUtils.throwIf(!app.getUserId().equals(currentUser.getId()),
+                ErrorCode.NO_AUTH_ERROR, "无权操作该应用");
+
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getMessage());
+
+        TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getMessage(), appId);
+        return bridgeVueTokenStream(stream, appId, currentUser.getId());
+    }
+
+    /**
+     * 继续对话 SSE 流式响应，内部根据 app 的 codeGenType 自动分流。
+     */
+    @Override
+    public SseEmitter chatContinueSse(AppChatContinueRequest request, HttpServletRequest httpRequest) {
+        Long appId = request.getAppId();
+        App app = this.getById(appId);
+        if (app != null && CodeGenTypeEnum.VUE_APP.getValue().equals(app.getCodeGenType())) {
+            return chatContinueVueApp(request, httpRequest);
+        }
+
+        // 非 Vue 模式：沿用原有 Flux 流程
+        SseEmitter emitter = new SseEmitter(600000L);
+        Flux<String> flux = chatContinue(request, httpRequest);
+        flux.subscribe(
+                chunk -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(chunk));
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> emitter.completeWithError(error),
+                () -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data(""));
+                    } catch (Exception ignored) {
+                    }
+                    emitter.complete();
+                }
+        );
+        return emitter;
+    }
+
+    /**
+     * 将 Vue TokenStream 桥接到 SseEmitter，统一处理流式事件、工具调用、构建和持久化。
+     */
+    private SseEmitter bridgeVueTokenStream(TokenStream stream, Long appId, Long userId) {
+        SseEmitter emitter = new SseEmitter(600000L);
+
+        safeSend(emitter, SseEmitter.event().data(buildInit(appId)));
+
+        StringBuilder aiResponse = new StringBuilder();
+        stream
+                // AI 每生成一个文本 token 就回调一次，参数 partial 是增量文本片段
+                .onPartialResponse(partial -> {
+                    aiResponse.append(partial);
+                    safeSend(emitter, SseEmitter.event().data(buildChunk(partial)));
+                })
+                // 每完成一次工具调用（如 write_file）就回调一次，包含工具名、参数和返回值
+                .onToolExecuted(after -> {
+                    safeSend(emitter, SseEmitter.event().data(
+                            buildToolExecuted(after)));
+                })
+                // AI 对话完全结束（所有文本生成完毕、所有工具调用完毕）后回调一次
+                .onCompleteResponse(resp -> {
+                    saveChatMessage(appId, userId, ChatHistoryRoleEnum.ASSISTANT,
+                            aiResponse.toString());
+
+                    // 从缓存中读取 AI 声明过的依赖，追加到 package.json 后执行 npm install && npm build
+                    var deps = aiCodeGeneratorServiceFactory.getDependencyToolForApp(appId)
+                            .getDependencies();
+                    var result = vueProjectBuilder.installAndBuild(appId, deps);
+
+                    safeSend(emitter, SseEmitter.event().data(toJson(Map.of(
+                            "b", result.success() ? "ok" : "fail",
+                            "msg", result.message()))));
+                    safeSend(emitter, SseEmitter.event().name("done").data(""));
+                    emitter.complete();
+                })
+                // 流式过程中发生任何错误时回调，将异常传播给 SseEmitter 使其终止 SSE 连接
+                .onError(error -> {
+                    log.error("Vue 流式生成失败, appId={}", appId, error);
+                    emitter.completeWithError(error);
+                })
+                // 启动异步流式处理。start() 是终点方法，调用后 TokenStream 在后台线程开始工作，
+                // 主线程立即返回 emitter 给 Controller → 浏览器建立 SSE 连接
+                .start();
+
+        return emitter;
+    }
+
+    /**
+     * 安全发送 SSE 事件，忽略连接断开异常。
+     */
+    private void safeSend(SseEmitter emitter, SseEmitter.SseEventBuilder event) {
+        try {
+            emitter.send(event);
+        } catch (IOException e) {
+            // 连接已断开，忽略
+        }
+    }
+
+    /**
+     * 构建工具执行完成 SSE 事件。
+     */
+    private String buildToolExecuted(ToolExecution execution) {
+        ToolExecutionRequest req = execution.request();
+        Map<String, Object> data = new HashMap<>();
+        data.put("t", "tool_executed");
+        data.put("id", req.id());
+        data.put("name", req.name());
+        try {
+            JsonNode args = objectMapper.readTree(req.arguments());
+            if (args.has("path")) {
+                data.put("input", Map.of("path", args.get("path").asText()));
+            }
+        } catch (Exception ignored) {
+        }
+        return toJson(data);
+    }
+
+    /**
      * 保存一条对话消息到 chat_history 表。
      *
      * @param appId   应用 id
@@ -247,6 +423,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         // 5. 验证代码是否已生成（检查 code_output 下的临时文件目录）
         String codeDir = AppConstant.CODE_OUTPUT_ROOT_DIR + "/" + app.getCodeGenType() + "_" + appId;
+        // Vue 工程化项目部署 dist/ 子目录
+        if (CodeGenTypeEnum.VUE_APP.getValue().equals(app.getCodeGenType())) {
+            codeDir += "/dist";
+        }
         ThrowUtils.throwIf(!FileUtil.exist(codeDir),
                 ErrorCode.OPERATION_ERROR, "该应用尚未生成代码，请先生成后再部署");
 

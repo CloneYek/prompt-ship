@@ -87,38 +87,32 @@ public class AppController {
     }
 
     /**
+     * 创建 Vue 工程化应用并流式生成（用户，SSE 流式）。
+     * <p>
+     * 返回的 SSE 事件包含 AI 文本块、工具调用步骤、构建结果和完成信号。
+     *
+     * @param request 创建请求（提示词、应用名称）
+     * @return SseEmitter 流式响应
+     */
+    @PostMapping(value = "/chat/vue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuthCheck
+    public SseEmitter chatToGenVueApp(@Valid @RequestBody AppCreateRequest request,
+                                       HttpServletRequest httpRequest) {
+        return appService.chatToGenVueApp(request, httpRequest);
+    }
+
+    /**
      * 基于已有应用继续对话生成代码（用户，SSE 流式）。
+     * 内部根据 app 的 codeGenType 自动分流到 Vue 工具调用或旧模式。
      *
      * @param request 续聊请求（appId、新消息）
-     * @return SSE 流式响应（首个事件为应用元数据，后续为代码块）
+     * @return SSE 流式响应（首个事件为应用元数据，后续为代码块/工具调用事件）
      */
     @PostMapping(value = "/chat/continue", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @AuthCheck
     public SseEmitter chatContinue(@Valid @RequestBody AppChatContinueRequest request,
                                    HttpServletRequest httpRequest) {
-        SseEmitter emitter = new SseEmitter(600000L);
-
-        Flux<String> flux = appService.chatContinue(request, httpRequest);
-        flux.subscribe(
-                chunk -> {
-                    try {
-                        emitter.send(SseEmitter.event().data(chunk));
-                    } catch (Exception e) {
-                        emitter.completeWithError(e);
-                    }
-                },
-                error -> emitter.completeWithError(error),
-                () -> {
-                    try {
-                        emitter.send(SseEmitter.event().name("done").data(""));
-                    } catch (Exception e) {
-                        // 连接已断开，忽略
-                    }
-                    emitter.complete();
-                }
-        );
-
-        return emitter;
+        return appService.chatContinueSse(request, httpRequest);
     }
 
     /**

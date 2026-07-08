@@ -44,8 +44,13 @@ public class StaticResourceController {
             if (resourcePath.equals("/")) {
                 resourcePath = "/index.html";
             }
-            // 构建文件路径
-            String filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
+            // 构建文件路径，Vue 工程化项目需定位到 dist/ 子目录
+            String filePath;
+            if (deployKey.startsWith("vue_app_")) {
+                filePath = PREVIEW_ROOT_DIR + "/" + deployKey + "/dist" + resourcePath;
+            } else {
+                filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
+            }
             File file = new File(filePath);
             // 检查文件是否存在
             if (!file.exists()) {
