@@ -9,7 +9,9 @@
       <p class="app-subtitle">用自然语言描述需求，AI 会为你生成可预览的 Web 应用。</p>
       <div ref="messageListRef" class="message-list">
         <div v-if="loadingHistory" class="message-state">正在加载历史对话...</div>
-        <div v-else-if="!chatMessages.length" class="message-state">还没有对话，输入需求后开始生成。</div>
+        <div v-else-if="!chatMessages.length" class="message-state">
+          还没有对话，输入需求后开始生成。
+        </div>
         <article
           v-for="chatMessage in chatMessages"
           :key="chatMessage.id"
@@ -26,10 +28,10 @@
             <a-avatar :src="assistantAvatar" />
             <div class="message-bubble ai-bubble">
               <div class="message-role">PromptShip AI</div>
-              <p v-if="!chatMessage.content" class="muted-text">
+              <p v-if="isAssistantMessageEmpty(chatMessage)" class="muted-text">
                 {{ chatMessage.streaming ? 'AI 正在生成回复...' : 'AI 暂无回复内容' }}
               </p>
-              <div v-else class="step-list">
+              <div v-if="chatMessage.content" class="step-list">
                 <section
                   v-for="step in parseAssistantSteps(chatMessage.content)"
                   :key="step.key"
@@ -40,6 +42,40 @@
                     <strong>{{ step.title }}</strong>
                   </div>
                   <MarkdownContent :content="step.content" />
+                </section>
+              </div>
+              <div
+                v-if="chatMessage.toolEvents?.length || chatMessage.buildResult"
+                class="step-list event-list"
+              >
+                <section
+                  v-for="(toolEvent, index) in chatMessage.toolEvents || []"
+                  :key="toolEvent.id || index"
+                  class="step-card tool-step-card"
+                >
+                  <div class="step-card-header">
+                    <span>TOOL</span>
+                    <strong>{{ getToolCardTitle(toolEvent) }}</strong>
+                  </div>
+                  <p>{{ getToolCardDescription(toolEvent) }}</p>
+                </section>
+                <section
+                  v-if="chatMessage.buildResult"
+                  class="step-card build-step-card"
+                  :class="chatMessage.buildResult.status === 'ok' ? 'build-success' : 'build-fail'"
+                >
+                  <div class="step-card-header">
+                    <span>BUILD</span>
+                    <strong>{{ getBuildCardTitle(chatMessage.buildResult) }}</strong>
+                  </div>
+                  <p>{{ getBuildCardDescription(chatMessage.buildResult) }}</p>
+                  <pre
+                    v-if="
+                      chatMessage.buildResult.status === 'fail' && chatMessage.buildResult.message
+                    "
+                    class="build-log"
+                    >{{ chatMessage.buildResult.message }}</pre
+                  >
                 </section>
               </div>
             </div>
@@ -112,13 +148,16 @@ import { message } from 'ant-design-vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   chatContinueApp,
-  chatToGenerateApp,
+  chatToGenerateVueApp,
   deployMyApp,
   getAppDetail,
   getGeneratedPreviewUrl,
   INITIAL_PROMPT_STORAGE_KEY,
+  VUE_APP_CODE_GEN_TYPE,
   type AppId,
   type AppVO,
+  type ChatBuildResult,
+  type ChatToolExecutedEvent,
 } from '@/api/services/appService'
 import {
   listAppChatHistory,
@@ -134,6 +173,8 @@ type ChatMessage = {
   role: ChatRole
   content: string
   streaming?: boolean
+  toolEvents?: ChatToolExecutedEvent[]
+  buildResult?: ChatBuildResult
 }
 
 type AssistantStep = {
@@ -150,6 +191,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const currentAppId = ref<AppId>()
 const appDetail = ref<AppVO>()
+const creatingCodeGenType = ref<string>()
 const initialPrompt = ref('')
 const draftPrompt = ref('')
 const chatMessages = ref<ChatMessage[]>([])
@@ -170,13 +212,16 @@ const userInitial = computed(() =>
 const appTitle = computed(
   () => appDetail.value?.appName || initialPrompt.value.slice(0, 18) || '新应用',
 )
+const previewCodeGenType = computed(() => appDetail.value?.codeGenType || creatingCodeGenType.value)
 const previewUrl = computed(() =>
-  getGeneratedPreviewUrl(currentAppId.value, appDetail.value?.codeGenType),
+  getGeneratedPreviewUrl(currentAppId.value, previewCodeGenType.value),
 )
 const previewTitle = computed(() =>
   currentAppId.value ? 'App #' + currentAppId.value : '生成中的应用',
 )
-const canSubmit = computed(() => Boolean(draftPrompt.value.trim()) && !generating.value && !loadingHistory.value)
+const canSubmit = computed(
+  () => Boolean(draftPrompt.value.trim()) && !generating.value && !loadingHistory.value,
+)
 const inputPlaceholder = computed(() =>
   currentAppId.value ? '继续描述你想调整的功能、样式或内容' : '描述你想生成的 Web 应用',
 )
@@ -235,6 +280,37 @@ const updateMessage = (id: string, updater: (message: ChatMessage) => ChatMessag
   chatMessages.value.splice(index, 1, updater(chatMessages.value[index]))
   void scrollMessagesToBottom()
 }
+
+const appendToolEvent = (messageId: string, event: ChatToolExecutedEvent) => {
+  updateMessage(messageId, (message) => ({
+    ...message,
+    toolEvents: [...(message.toolEvents || []), event],
+  }))
+}
+
+const updateBuildResult = (messageId: string, result: ChatBuildResult) => {
+  updateMessage(messageId, (message) => ({
+    ...message,
+    buildResult: result,
+  }))
+}
+
+const isAssistantMessageEmpty = (chatMessage: ChatMessage) =>
+  !chatMessage.content && !chatMessage.toolEvents?.length && !chatMessage.buildResult
+
+const getToolCardTitle = (event: ChatToolExecutedEvent) =>
+  event.name ? '已执行 ' + event.name : '工具执行完成'
+
+const getToolCardDescription = (event: ChatToolExecutedEvent) =>
+  event.input?.path ? '目标文件：' + event.input.path : '工具调用已完成'
+
+const getBuildCardTitle = (result: ChatBuildResult) =>
+  result.status === 'ok' ? 'Vue 项目构建成功' : 'Vue 项目构建失败'
+
+const getBuildCardDescription = (result: ChatBuildResult) =>
+  result.status === 'ok'
+    ? '后端已完成 npm install 和 npm build，预览页面可以刷新查看。'
+    : '后端构建时遇到错误，下面展示后端返回的关键信息。'
 
 const parseAssistantSteps = (content: string): AssistantStep[] => {
   const normalizedContent = content.trim()
@@ -356,6 +432,7 @@ const startGeneration = async () => {
   }
 
   initialPrompt.value = prompt
+  creatingCodeGenType.value = VUE_APP_CODE_GEN_TYPE
   chatMessages.value = []
   appendMessage('user', prompt)
   const assistantMessage = appendMessage('assistant', '', true)
@@ -363,9 +440,10 @@ const startGeneration = async () => {
   generating.value = true
   deployUrl.value = ''
   draftPrompt.value = ''
+  let latestBuildResult: ChatBuildResult | undefined
 
   try {
-    await chatToGenerateApp(
+    await chatToGenerateVueApp(
       { initPrompt: prompt },
       {
         onAppId: (appId) => {
@@ -376,6 +454,13 @@ const startGeneration = async () => {
             ...message,
             content: message.content + chunk,
           }))
+        },
+        onToolExecuted: (event) => {
+          appendToolEvent(assistantMessageId, event)
+        },
+        onBuildResult: (result) => {
+          latestBuildResult = result
+          updateBuildResult(assistantMessageId, result)
         },
         onDone: () => {
           updateMessage(assistantMessageId, (message) => ({
@@ -391,7 +476,11 @@ const startGeneration = async () => {
       streaming: false,
     }))
     generated.value = true
-    message.success('应用生成完成')
+    if (latestBuildResult?.status === 'fail') {
+      message.warning('应用生成完成，但 Vue 项目构建失败')
+    } else {
+      message.success('应用生成完成')
+    }
   } catch (error) {
     updateMessage(assistantMessageId, (message) => ({
       ...message,
@@ -403,7 +492,9 @@ const startGeneration = async () => {
     sessionStorage.removeItem(INITIAL_PROMPT_STORAGE_KEY)
     if (currentAppId.value) {
       await loadExistingApp(currentAppId.value, false).catch(() => undefined)
-      previewKey.value += 1
+      if (!latestBuildResult || latestBuildResult.status === 'ok') {
+        previewKey.value += 1
+      }
       if (route.params.id !== currentAppId.value) {
         await router.replace('/app/' + currentAppId.value + '/chat')
       }
@@ -424,6 +515,7 @@ const continueChat = async () => {
   generating.value = true
   deployUrl.value = ''
   draftPrompt.value = ''
+  let latestBuildResult: ChatBuildResult | undefined
 
   try {
     await chatContinueApp(appId, prompt, {
@@ -432,6 +524,13 @@ const continueChat = async () => {
           ...message,
           content: message.content + chunk,
         }))
+      },
+      onToolExecuted: (event) => {
+        appendToolEvent(assistantMessageId, event)
+      },
+      onBuildResult: (result) => {
+        latestBuildResult = result
+        updateBuildResult(assistantMessageId, result)
       },
       onDone: () => {
         updateMessage(assistantMessageId, (message) => ({
@@ -444,8 +543,12 @@ const continueChat = async () => {
       ...message,
       streaming: false,
     }))
-    message.success('回复生成完成')
-    previewKey.value += 1
+    if (latestBuildResult?.status === 'fail') {
+      message.warning('回复生成完成，但 Vue 项目构建失败')
+    } else {
+      message.success('回复生成完成')
+      previewKey.value += 1
+    }
   } catch (error) {
     updateMessage(assistantMessageId, (message) => ({
       ...message,
@@ -618,11 +721,29 @@ onMounted(async () => {
   flex-direction: column;
   gap: 10px;
 }
+.event-list {
+  margin-top: 10px;
+}
 .step-card {
   padding: 12px;
   border: 1px solid #dce5f2;
   border-radius: 10px;
   background: #fff;
+}
+.tool-step-card {
+  border-color: #c7eadf;
+  background: #f6fffb;
+}
+.build-step-card {
+  border-color: #dce5f2;
+}
+.build-success {
+  border-color: #b7eb8f;
+  background: #f6ffed;
+}
+.build-fail {
+  border-color: #ffccc7;
+  background: #fff7f6;
 }
 .step-card-header {
   display: flex;
@@ -642,6 +763,18 @@ onMounted(async () => {
 .step-card-header strong {
   color: #111827;
   font-size: 14px;
+}
+.build-log {
+  max-height: 220px;
+  margin: 10px 0 0;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  color: #ffe8e6;
+  background: #3f1d1b;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 .chat-input-box {
   padding: 14px;

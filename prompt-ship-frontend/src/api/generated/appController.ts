@@ -87,6 +87,21 @@ export async function chatContinue(
   })
 }
 
+/** 此处后端没有提供注释 POST /app/chat/vue */
+export async function chatToGenVueApp(
+  body: API.AppCreateRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.SseEmitter>('/app/chat/vue', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
 /** 此处后端没有提供注释 POST /app/create */
 export async function createApp(body: API.AppCreateRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseLong>('/app/create', {

@@ -94,7 +94,7 @@ public class VueProjectBuilder {
             pb.directory(workingDir);
             // Windows 下使用 cmd /c npm，跨平台兼容
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                String[] cmd = new String[args.length + 2];
+                String[] cmd = new String[args.length + 3];
                 cmd[0] = "cmd";
                 cmd[1] = "/c";
                 cmd[2] = "npm";

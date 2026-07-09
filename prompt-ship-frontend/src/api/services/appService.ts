@@ -14,6 +14,7 @@ import { API_BASE_URL } from '@/request'
 
 export const INITIAL_PROMPT_STORAGE_KEY = 'prompt_ship_initial_prompt'
 export const DEFAULT_CODE_GEN_TYPE = 'multi_file'
+export const VUE_APP_CODE_GEN_TYPE = 'vue_app'
 export const DEFAULT_APP_COVER =
   'https://cdn.phototourl.com/free/2026-07-02-40ee78e7-12d4-47f5-9554-4fa777136113.png'
 
@@ -47,7 +48,23 @@ export type AdminAppPageParams = Omit<API.listAppVOByPageByAdminParams, 'pageNum
 export type ChatStreamHandlers = {
   onAppId?: (appId: AppId) => void
   onChunk?: (chunk: string) => void
+  onToolExecuted?: (event: ChatToolExecutedEvent) => void
+  onBuildResult?: (result: ChatBuildResult) => void
   onDone?: () => void
+}
+
+export type ChatToolExecutedEvent = {
+  id?: string
+  name?: string
+  input?: {
+    path?: string
+    [key: string]: unknown
+  }
+}
+
+export type ChatBuildResult = {
+  status: 'ok' | 'fail'
+  message?: string
 }
 
 const normalizeAppId = (id?: string | number) => (id == null ? undefined : String(id))
@@ -228,12 +245,34 @@ const readChatStream = async (
     }
 
     try {
-      const parsed = JSON.parse(data) as { i?: string | number; d?: string }
+      const parsed = JSON.parse(data) as {
+        i?: string | number
+        d?: string
+        t?: string
+        id?: string
+        name?: string
+        input?: ChatToolExecutedEvent['input']
+        b?: string
+        msg?: string
+      }
       if (parsed.i != null) {
         handlers.onAppId?.(String(parsed.i))
       }
       if (typeof parsed.d === 'string') {
         handlers.onChunk?.(parsed.d)
+      }
+      if (parsed.t === 'tool_executed') {
+        handlers.onToolExecuted?.({
+          id: parsed.id,
+          name: parsed.name,
+          input: parsed.input,
+        })
+      }
+      if (parsed.b === 'ok' || parsed.b === 'fail') {
+        handlers.onBuildResult?.({
+          status: parsed.b,
+          message: parsed.msg,
+        })
       }
     } catch {
       handlers.onChunk?.(data)
@@ -257,10 +296,13 @@ const readChatStream = async (
   }
 }
 
-export const chatToGenerateApp = async (
+export const chatToGenerateApp = async (body: API.AppCreateRequest, handlers: ChatStreamHandlers) =>
+  readChatStream('/app/chat', body, handlers, '生成请求失败：')
+
+export const chatToGenerateVueApp = async (
   body: API.AppCreateRequest,
   handlers: ChatStreamHandlers,
-) => readChatStream('/app/chat', body, handlers, '生成请求失败：')
+) => readChatStream('/app/chat/vue', body, handlers, 'Vue 应用生成请求失败：')
 
 export const chatContinueApp = async (
   appId: AppId,

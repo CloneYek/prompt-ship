@@ -173,6 +173,7 @@ import {
   listGoodApps,
   listMyApps,
   updateMyApp,
+  VUE_APP_CODE_GEN_TYPE,
   type AppVO,
 } from '@/api/services/appService'
 import { useUserStore } from '@/stores/user'
@@ -190,7 +191,7 @@ const goodAppsLoading = ref(false)
 const renamingAppId = ref<string>()
 const renameValue = ref('')
 const quickPrompts = ['活动宣传页', '企业官网', '电商运营后台', '个人博客网站']
-const categories = ['全部', 'html', 'multi_file']
+const categories = ['全部', 'html', 'multi_file', VUE_APP_CODE_GEN_TYPE]
 const fallbackCases: AppVO[] = [
   {
     id: 'demo-0',
