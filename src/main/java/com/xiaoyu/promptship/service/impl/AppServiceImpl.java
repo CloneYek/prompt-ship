@@ -32,6 +32,7 @@ import com.xiaoyu.promptship.model.enums.CodeGenTypeEnum;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
 import com.xiaoyu.promptship.service.ChatHistoryService;
+import com.xiaoyu.promptship.service.ScreenshotService;
 import com.xiaoyu.promptship.service.UserService;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.service.TokenStream;
@@ -77,6 +78,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+
+    @Resource
+    private ScreenshotService screenshotService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -433,13 +437,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 6. 生成唯一的 6 位 deployKey
         String deployKey = generateUniqueDeployKey();
 
-        // 7. 将源目录下的文件复制到部署目录（只复制内容，不复制源目录名本身）
+        // 7. 递归复制源目录内容到部署目录，确保子目录（如 assets/）完整拷贝
         String deployDir = AppConstant.CODE_DEPLOY_ROOT_DIR + "/" + deployKey;
-        FileUtil.mkdir(deployDir);
-        File[] files = FileUtil.ls(codeDir);
-        for (File file : files) {
-            FileUtil.copy(file.getAbsolutePath(), deployDir + "/" + file.getName(), true);
-        }
+        FileUtil.copyContent(new File(codeDir), new File(deployDir), true);
 
         // 8. 写入 deployKey 和 deployedTime
         app.setDeployKey(deployKey);
@@ -447,7 +447,31 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         boolean updated = this.updateById(app);
         ThrowUtils.throwIf(!updated, new BusinessException(ErrorCode.SYSTEM_ERROR, "部署失败，请稍后重试"));
 
-        return AppConstant.CODE_DEPLOY_HOST + "/" + deployKey + "/";
+        String deployUrl = AppConstant.CODE_DEPLOY_HOST + "/" + deployKey + "/";
+
+        // 9. 异步生成截图并更新应用封面（使用 Spring Boot 本地端点，不依赖外部 Nginx）
+        String screenshotUrl = "http://localhost:8123/api/static/" + deployKey + "/";
+        generateAppScreenshotAsync(appId, screenshotUrl);
+        return deployUrl;
+    }
+
+    /**
+     * 异步生成截图并上传
+     * @param appId 应用ID
+     * @param appUrl 应用URL
+     */
+    @Override
+    public void generateAppScreenshotAsync(Long appId, String appUrl) {
+        Thread.startVirtualThread(()->{
+            //调用截图服务生成截图并上传
+            String screenshotUrl = screenshotService.generateAndUploadScreenshot(appUrl);
+            //更新数据库的应用封面
+            App updateApp = new App();
+            updateApp.setId(appId);
+            updateApp.setCover(screenshotUrl);
+            boolean result = this.updateById(updateApp);
+            ThrowUtils.throwIf(!result,ErrorCode.OPERATION_ERROR,"更新应用封面失败");
+        });
     }
 
     /**

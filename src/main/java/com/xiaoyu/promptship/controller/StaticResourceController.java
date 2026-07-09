@@ -19,8 +19,11 @@ import java.io.File;
 @RequestMapping("/static")
 public class StaticResourceController {
 
-    // 应用生成根目录（用于浏览）
+    // 应用生成根目录（用于预览浏览）
     private static final String PREVIEW_ROOT_DIR = AppConstant.CODE_OUTPUT_ROOT_DIR;
+
+    // 应用部署根目录（用于部署后访问）
+    private static final String DEPLOY_ROOT_DIR = AppConstant.CODE_DEPLOY_ROOT_DIR;
 
     /**
      * 提供静态资源访问，支持目录重定向
@@ -45,21 +48,28 @@ public class StaticResourceController {
                 resourcePath = "/index.html";
             }
             // 构建文件路径，Vue 工程化项目需定位到 dist/ 子目录
-            String filePath;
+            String previewPath;
             if (deployKey.startsWith("vue_app_")) {
-                filePath = PREVIEW_ROOT_DIR + "/" + deployKey + "/dist" + resourcePath;
+                previewPath = PREVIEW_ROOT_DIR + "/" + deployKey + "/dist" + resourcePath;
             } else {
-                filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
+                previewPath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
             }
-            File file = new File(filePath);
-            // 检查文件是否存在
+            File file = new File(previewPath);
+
+            // 预览目录找不到时 fallback 到部署目录（已部署的应用）
             if (!file.exists()) {
-                return ResponseEntity.notFound().build();
+                String deployPath = DEPLOY_ROOT_DIR + "/" + deployKey + resourcePath;
+                File deployFile = new File(deployPath);
+                if (deployFile.exists()) {
+                    file = deployFile;
+                } else {
+                    return ResponseEntity.notFound().build();
+                }
             }
             // 返回文件资源
             Resource resource = new FileSystemResource(file);
             return ResponseEntity.ok()
-                    .header("Content-Type", getContentTypeWithCharset(filePath))
+                    .header("Content-Type", getContentTypeWithCharset(file.getPath()))
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
