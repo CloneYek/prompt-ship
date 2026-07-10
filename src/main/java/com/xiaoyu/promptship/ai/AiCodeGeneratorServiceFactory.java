@@ -87,6 +87,16 @@ public class AiCodeGeneratorServiceFactory {
     }
 
     /**
+     * 代码生成路由器 Bean（无状态，非流式），用于根据用户提示词判断最佳代码生成类型。
+     */
+    @Bean
+    public CodeGenRouterAgent codeGenRouterAgent() {
+        return AiServices.builder(CodeGenRouterAgent.class)
+                .chatModel(chatModel)
+                .build();
+    }
+
+    /**
      * 获取指定 App 的独立 AI Service。
      * <p>
      * 若缓存未命中，则创建新的 Service 实例：

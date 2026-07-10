@@ -11,6 +11,7 @@ import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.xiaoyu.promptship.ai.AiCodeGeneratorServiceFactory;
+import com.xiaoyu.promptship.ai.CodeGenRouterAgent;
 import com.xiaoyu.promptship.constant.AppConstant;
 import com.xiaoyu.promptship.core.AiCodeGeneratorFacade;
 import com.xiaoyu.promptship.core.vue.VueProjectBuilder;
@@ -87,10 +88,13 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private ProjectDownloadService projectDownloadService;
 
+    @Resource
+    private CodeGenRouterAgent codeGenRouterAgent;
+
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 创建应用（用户用）
+     * 创建应用（用户用），默认使用 VUE_APP 类型。
      *
      * @param request     创建请求
      * @param httpRequest HTTP 请求
@@ -98,6 +102,19 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      */
     @Override
     public long createApp(AppCreateRequest request, HttpServletRequest httpRequest) {
+        return createApp(request, httpRequest, CodeGenTypeEnum.VUE_APP);
+    }
+
+    /**
+     * 创建应用（用户用，指定代码生成类型）。
+     *
+     * @param request     创建请求
+     * @param httpRequest HTTP 请求
+     * @param codeGenType 代码生成类型
+     * @return 新应用 id
+     */
+    @Override
+    public long createApp(AppCreateRequest request, HttpServletRequest httpRequest, CodeGenTypeEnum codeGenType) {
         User currentUser = userService.getLoginUser(httpRequest);
 
         App app = new App();
@@ -109,8 +126,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         app.setInitPrompt(request.getInitPrompt());
         app.setUserId(currentUser.getId());
         app.setCover(AppConstant.DEFAULT_APP_COVER);
-        // 默认生成 Vue 工程化项目
-        app.setCodeGenType(CodeGenTypeEnum.VUE_APP.getValue());
+        app.setCodeGenType(codeGenType.getValue());
         // 暂时默认优先级为普通
         app.setPriority(0);
 
@@ -217,6 +233,45 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     }
 
     /**
+     * 智能路由创建应用并流式生成（统一入口）。
+     * <p>
+     * 流程：AI 路由判断类型 → 创建应用（写入路由结果）→ 保存用户消息 → 分流到对应流程。
+     * SSE 首个事件为初始化 + 路由结果：{@code {"i":"appId"}} 后跟 {@code {"r":"vue_app"}}。
+     * </p>
+     */
+    @Override
+    public SseEmitter chatUnifiedSse(AppCreateRequest request, HttpServletRequest httpRequest) {
+        // 1. AI 路由判断代码生成类型
+        CodeGenTypeEnum codeGenType = codeGenRouterAgent.route(request.getInitPrompt());
+        if (codeGenType == null) {
+            codeGenType = CodeGenTypeEnum.VUE_APP;
+        }
+        log.info("AI 路由结果: prompt='{}' → type={}", CharSequenceUtil.subPre(request.getInitPrompt(), 30), codeGenType.getValue());
+
+        // 2. 创建应用并写入路由结果
+        User currentUser = userService.getLoginUser(httpRequest);
+        long appId = createApp(request, httpRequest, codeGenType);
+
+        // 3. 保存用户消息
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getInitPrompt());
+
+        // 4. 根据类型分流
+        if (codeGenType == CodeGenTypeEnum.VUE_APP) {
+            try {
+                vueSkeletonCopier.copySkeleton(appId);
+            } catch (IOException e) {
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "项目骨架初始化失败");
+            }
+            TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getInitPrompt(), appId);
+            return bridgeVueTokenStream(stream, appId, currentUser.getId(), codeGenType);
+        } else {
+            Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStreamForApp(
+                    request.getInitPrompt(), codeGenType, appId);
+            return bridgeFluxToSse(aiFlux, appId, currentUser.getId(), codeGenType);
+        }
+    }
+
+    /**
      * 创建 Vue 工程化应用并流式生成（SSE）。
      * <p>
      * 流程：创建应用(VUE_APP) → 拷贝骨架 → 保存用户消息
@@ -239,8 +294,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         // 获取TokenStream流式对象
         TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getInitPrompt(), appId);
-        // 转成Sse对象
-        return bridgeVueTokenStream(stream, appId, currentUser.getId());
+        // 转成Sse对象（codeGenType传null，非路由入口不发送路由事件）
+        return bridgeVueTokenStream(stream, appId, currentUser.getId(), null);
     }
 
     /**
@@ -258,7 +313,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getMessage());
 
         TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getMessage(), appId);
-        return bridgeVueTokenStream(stream, appId, currentUser.getId());
+        // codeGenType传null，续聊不发送路由事件
+        return bridgeVueTokenStream(stream, appId, currentUser.getId(), null);
     }
 
     /**
@@ -298,10 +354,11 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     /**
      * 将 Vue TokenStream 桥接到 SseEmitter，统一处理流式事件、工具调用、构建和持久化。
      */
-    private SseEmitter bridgeVueTokenStream(TokenStream stream, Long appId, Long userId) {
+    private SseEmitter bridgeVueTokenStream(TokenStream stream, Long appId, Long userId, CodeGenTypeEnum codeGenType) {
         SseEmitter emitter = new SseEmitter(600000L);
 
         safeSend(emitter, SseEmitter.event().data(buildInit(appId)));
+        safeSend(emitter, SseEmitter.event().data(buildRoute(codeGenType)));
 
         StringBuilder aiResponse = new StringBuilder();
         stream
@@ -519,6 +576,49 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
             }
         } while (this.count(new QueryWrapper().eq(App::getDeployKey, key)) > 0);
         return key;
+    }
+
+    /**
+     * 构建 {"r":"vue_app"} 路由事件
+     */
+    private String buildRoute(CodeGenTypeEnum codeGenType) {
+        return toJson(Map.of("r", codeGenType.getValue()));
+    }
+
+    /**
+     * 将 Flux<String> 桥接到 SseEmitter（用于非 Vue 模式），统一处理流式事件和持久化。
+     * 事件顺序：{"i":"appId"} → {"r":"codeGenType"} → {"d":"token"}... → event:done
+     */
+    private SseEmitter bridgeFluxToSse(Flux<String> flux, Long appId, Long userId, CodeGenTypeEnum codeGenType) {
+        SseEmitter emitter = new SseEmitter(600000L);
+
+        StringBuilder aiResponseBuilder = new StringBuilder();
+
+        // 拼接初始化、路由事件 + AI 流内容，统一订阅
+        Flux.concat(
+                Flux.just(buildInit(appId), buildRoute(codeGenType)),
+                flux.doOnNext(aiResponseBuilder::append).map(this::buildChunk)
+        ).doOnComplete(() ->
+                saveChatMessage(appId, userId, ChatHistoryRoleEnum.ASSISTANT, aiResponseBuilder.toString())
+        ).subscribe(
+                chunk -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(chunk));
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                },
+                error -> emitter.completeWithError(error),
+                () -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data(""));
+                    } catch (Exception ignored) {
+                    }
+                    emitter.complete();
+                }
+        );
+
+        return emitter;
     }
 
     /**

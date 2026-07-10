@@ -8,6 +8,7 @@ import com.xiaoyu.promptship.model.dto.AppQueryRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateMyRequest;
 import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
 import com.xiaoyu.promptship.model.entity.App;
+import com.xiaoyu.promptship.model.enums.CodeGenTypeEnum;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -30,6 +31,16 @@ public interface AppService extends IService<App> {
      * @return 新应用 id
      */
     long createApp(AppCreateRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 创建应用（用户用，指定代码生成类型）。
+     *
+     * @param request      创建请求
+     * @param httpRequest  HTTP 请求
+     * @param codeGenType  代码生成类型
+     * @return 新应用 id
+     */
+    long createApp(AppCreateRequest request, HttpServletRequest httpRequest, CodeGenTypeEnum codeGenType);
 
     /**
      * 异步生成截图并上传
@@ -162,6 +173,16 @@ public interface AppService extends IService<App> {
      * @return SseEmitter 流式响应
      */
     SseEmitter chatContinueSse(AppChatContinueRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 智能路由创建应用并流式生成代码（统一入口）。
+     * 内部通过 AI 路由判断最佳代码生成类型，自动分流到 Vue / HTML / MULTI_FILE 流程。
+     *
+     * @param request     创建请求（提示词）
+     * @param httpRequest HTTP 请求
+     * @return SseEmitter 流式响应（首个事件为 appId + 路由结果）
+     */
+    SseEmitter chatUnifiedSse(AppCreateRequest request, HttpServletRequest httpRequest);
 
     /**
      * 下载应用项目源码压缩包（仅本人可下载）

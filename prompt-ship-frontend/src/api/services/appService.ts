@@ -48,6 +48,7 @@ export type AdminAppPageParams = Omit<API.listAppVOByPageByAdminParams, 'pageNum
 
 export type ChatStreamHandlers = {
   onAppId?: (appId: AppId) => void
+  onRoute?: (codeGenType: string) => void
   onChunk?: (chunk: string) => void
   onToolExecuted?: (event: ChatToolExecutedEvent) => void
   onBuildResult?: (result: ChatBuildResult) => void
@@ -256,6 +257,7 @@ const readChatStream = async (
     try {
       const parsed = JSON.parse(data) as {
         i?: string | number
+        r?: string
         d?: string
         t?: string
         id?: string
@@ -266,6 +268,9 @@ const readChatStream = async (
       }
       if (parsed.i != null) {
         handlers.onAppId?.(String(parsed.i))
+      }
+      if (typeof parsed.r === 'string') {
+        handlers.onRoute?.(parsed.r)
       }
       if (typeof parsed.d === 'string') {
         handlers.onChunk?.(parsed.d)

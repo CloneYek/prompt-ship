@@ -25,7 +25,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
 /**
  * 应用 控制层。
  *
@@ -54,38 +53,20 @@ public class AppController {
     }
 
     /**
-     * 创建应用并与 AI 流式对话生成代码（用户）。
+     * 智能路由创建应用并流式生成代码（统一入口）。
+     * <p>
+     * 内部通过 AI 路由判断最佳代码生成类型（html / multi_file / vue_app），
+     * 自动分流到对应流程。SSE 首批事件包含初始化 appId 和路由结果：
+     * {@code {"i":"appId"}} → {@code {"r":"vue_app"}}。
      *
      * @param request 创建请求（提示词、应用名称）
-     * @return SSE 流式响应（首个事件为应用元数据，后续为代码块）
+     * @return SSE 流式响应
      */
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @AuthCheck
     public SseEmitter chatToGenCode(@Valid @RequestBody AppCreateRequest request,
                                     HttpServletRequest httpRequest) {
-        SseEmitter emitter = new SseEmitter(600000L);
-
-        Flux<String> flux = appService.chatToGenCode(request, httpRequest);
-        flux.subscribe(
-                chunk -> {
-                    try {
-                        emitter.send(SseEmitter.event().data(chunk));
-                    } catch (Exception e) {
-                        emitter.completeWithError(e);
-                    }
-                },
-                error -> emitter.completeWithError(error),
-                () -> {
-                    try {
-                        emitter.send(SseEmitter.event().name("done").data(""));
-                    } catch (Exception e) {
-                        // 连接已断开，忽略
-                    }
-                    emitter.complete();
-                }
-        );
-
-        return emitter;
+        return appService.chatUnifiedSse(request, httpRequest);
     }
 
     /**

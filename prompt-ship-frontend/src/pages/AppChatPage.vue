@@ -160,13 +160,12 @@ import { message } from 'ant-design-vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   chatContinueApp,
-  chatToGenerateVueApp,
+  chatToGenerateApp,
   deployMyApp,
   downloadMyApp,
   getAppDetail,
   getGeneratedPreviewUrl,
   INITIAL_PROMPT_STORAGE_KEY,
-  VUE_APP_CODE_GEN_TYPE,
   type AppId,
   type AppVO,
   type ChatBuildResult,
@@ -244,13 +243,25 @@ const helperText = computed(() =>
   currentAppId.value ? '当前应用 ID：' + currentAppId.value : '即将创建新应用',
 )
 const submitButtonText = computed(() => (currentAppId.value ? '发送' : '开始生成'))
+const getCodeGenTypeText = (codeGenType?: string) => {
+  if (codeGenType === 'html') {
+    return 'HTML 单文件'
+  }
+  if (codeGenType === 'multi_file') {
+    return '多文件模式'
+  }
+  if (codeGenType === 'vue_app') {
+    return 'Vue 工程化'
+  }
+  return codeGenType || '生成类型'
+}
 const generationStatus = computed(() =>
   generating.value
     ? { color: 'processing', text: '生成中' }
     : loadingHistory.value
       ? { color: 'processing', text: '加载历史' }
       : generated.value || currentAppId.value
-        ? { color: 'success', text: '可续聊' }
+        ? { color: 'success', text: getCodeGenTypeText(previewCodeGenType.value) }
         : { color: 'default', text: '待生成' },
 )
 
@@ -447,7 +458,7 @@ const startGeneration = async () => {
   }
 
   initialPrompt.value = prompt
-  creatingCodeGenType.value = VUE_APP_CODE_GEN_TYPE
+  creatingCodeGenType.value = undefined
   chatMessages.value = []
   appendMessage('user', prompt)
   const assistantMessage = appendMessage('assistant', '', true)
@@ -458,11 +469,14 @@ const startGeneration = async () => {
   let latestBuildResult: ChatBuildResult | undefined
 
   try {
-    await chatToGenerateVueApp(
+    await chatToGenerateApp(
       { initPrompt: prompt },
       {
         onAppId: (appId) => {
           currentAppId.value = appId
+        },
+        onRoute: (codeGenType) => {
+          creatingCodeGenType.value = codeGenType
         },
         onChunk: (chunk) => {
           updateMessage(assistantMessageId, (message) => ({
