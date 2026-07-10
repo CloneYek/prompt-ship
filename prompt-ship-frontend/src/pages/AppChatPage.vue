@@ -114,10 +114,22 @@
           <a-button :disabled="!previewUrl" shape="round" @click="reloadPreview">刷新预览</a-button>
           <a-button :disabled="!previewUrl" shape="round" @click="openPreview">新窗口打开</a-button>
           <a-button
+            class="download-button"
+            shape="round"
+            :loading="downloading"
+            :disabled="!currentAppId || generating || deploying"
+            @click="handleDownload"
+          >
+            <template #icon>
+              <img v-if="!downloading" :src="downloadIcon" alt="" class="download-icon" />
+            </template>
+            下载
+          </a-button>
+          <a-button
             type="primary"
             shape="round"
             :loading="deploying"
-            :disabled="!currentAppId || generating"
+            :disabled="!currentAppId || generating || downloading"
             @click="handleDeploy"
             >部署</a-button
           >
@@ -150,6 +162,7 @@ import {
   chatContinueApp,
   chatToGenerateVueApp,
   deployMyApp,
+  downloadMyApp,
   getAppDetail,
   getGeneratedPreviewUrl,
   INITIAL_PROMPT_STORAGE_KEY,
@@ -167,6 +180,7 @@ import {
 import { useUserStore } from '@/stores/user'
 import MarkdownContent from '@/components/MarkdownContent.vue'
 import assistantAvatar from '@/resource/assistant-avatar.png'
+import downloadIcon from '@/resource/download.svg'
 
 type ChatMessage = {
   id: string
@@ -199,6 +213,7 @@ const loadingHistory = ref(false)
 const generating = ref(false)
 const generated = ref(false)
 const deploying = ref(false)
+const downloading = ref(false)
 const deployUrl = ref('')
 const previewKey = ref(0)
 const messageListRef = ref<HTMLElement>()
@@ -586,6 +601,44 @@ const handleDeploy = async () => {
     deploying.value = false
   }
 }
+const readBlobErrorMessage = async (blob?: Blob) => {
+  if (!blob || !blob.type.includes('application/json')) {
+    return ''
+  }
+  try {
+    const payload = JSON.parse(await blob.text()) as { message?: string }
+    return payload.message || ''
+  } catch {
+    return ''
+  }
+}
+const handleDownload = async () => {
+  if (!currentAppId.value) return
+  downloading.value = true
+  try {
+    const res = await downloadMyApp(currentAppId.value)
+    const blob = res.data as Blob
+    const errorMessage = await readBlobErrorMessage(blob)
+    if (errorMessage) {
+      message.error(errorMessage)
+      return
+    }
+
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'app-' + currentAppId.value + '.zip'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    message.success('下载已开始')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '下载失败，请稍后重试')
+  } finally {
+    downloading.value = false
+  }
+}
 const reloadPreview = () => {
   previewKey.value += 1
 }
@@ -810,6 +863,38 @@ onMounted(async () => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+.download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.download-button:not(:disabled):hover {
+  transform: translateY(-1px);
+  border-color: #2f7cff;
+  color: #1769e0;
+  box-shadow: 0 8px 20px rgba(47, 124, 255, 0.16);
+}
+.download-button:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 3px 10px rgba(47, 124, 255, 0.12);
+}
+.download-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+.download-button:not(:disabled):hover .download-icon {
+  transform: translateY(1px);
+  opacity: 0.86;
 }
 .preview-frame-wrap {
   flex: 1;

@@ -2,6 +2,7 @@ import {
   deleteApp,
   deleteAppByAdmin,
   deployApp,
+  downloadAppProject,
   getAppVoById,
   getAppVoByIdByAdmin,
   listAppVoByPageByAdmin,
@@ -162,6 +163,14 @@ export const getAdminAppDetail = async (id: AppId) =>
   getAppVoByIdByAdmin({ id: id as unknown as number })
 
 export const deployMyApp = (appId: AppId) => deployApp({ appId: appId as unknown as number })
+
+export const downloadMyApp = (appId: AppId) =>
+  downloadAppProject(
+    { appId: appId as unknown as number },
+    {
+      responseType: 'blob',
+    },
+  )
 
 export const updateMyApp = (body: { id: AppId; appName?: string }) =>
   updateApp({

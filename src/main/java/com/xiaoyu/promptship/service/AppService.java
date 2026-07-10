@@ -10,6 +10,7 @@ import com.xiaoyu.promptship.model.dto.AppUpdateRequest;
 import com.xiaoyu.promptship.model.entity.App;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
@@ -161,4 +162,13 @@ public interface AppService extends IService<App> {
      * @return SseEmitter 流式响应
      */
     SseEmitter chatContinueSse(AppChatContinueRequest request, HttpServletRequest httpRequest);
+
+    /**
+     * 下载应用项目源码压缩包（仅本人可下载）
+     *
+     * @param appId       应用 id
+     * @param httpRequest HTTP 请求
+     * @param response    HTTP 响应（写入 ZIP 流）
+     */
+    void downloadAppProject(Long appId, HttpServletRequest httpRequest, HttpServletResponse response);
 }

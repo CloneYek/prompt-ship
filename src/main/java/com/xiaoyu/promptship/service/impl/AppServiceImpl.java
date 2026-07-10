@@ -32,6 +32,7 @@ import com.xiaoyu.promptship.model.enums.CodeGenTypeEnum;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
 import com.xiaoyu.promptship.service.ChatHistoryService;
+import com.xiaoyu.promptship.service.ProjectDownloadService;
 import com.xiaoyu.promptship.service.ScreenshotService;
 import com.xiaoyu.promptship.service.UserService;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -39,6 +40,7 @@ import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -81,6 +83,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private ScreenshotService screenshotService;
+
+    @Resource
+    private ProjectDownloadService projectDownloadService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -453,6 +458,33 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         String screenshotUrl = "http://localhost:8123/api/static/" + deployKey + "/";
         generateAppScreenshotAsync(appId, screenshotUrl);
         return deployUrl;
+    }
+
+    /**
+     * 下载应用项目源码压缩包（仅本人可下载）。
+     *
+     * @param appId       应用 id
+     * @param httpRequest HTTP 请求
+     * @param response    HTTP 响应（写入 ZIP 流）
+     */
+    @Override
+    public void downloadAppProject(Long appId, HttpServletRequest httpRequest, HttpServletResponse response) {
+        // 1. 校验应用存在且属于当前用户
+        User currentUser = userService.getLoginUser(httpRequest);
+        App app = this.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        ThrowUtils.throwIf(!app.getUserId().equals(currentUser.getId()),
+                ErrorCode.NO_AUTH_ERROR, "无权下载该应用");
+
+        // 2. 构建源码目录路径（生成目录，非部署目录）
+        String codeGenType = app.getCodeGenType();
+        String sourceDirName = codeGenType + "_" + appId;
+        String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+
+        // 3. 下载文件名
+        String downloadFileName = "app-" + appId;
+
+        projectDownloadService.downloadProjectZip(sourceDirPath, downloadFileName, response);
     }
 
     /**

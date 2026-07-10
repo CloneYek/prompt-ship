@@ -4,6 +4,8 @@ import com.mybatisflex.core.paginate.Page;
 import com.xiaoyu.promptship.annotation.AuthCheck;
 import com.xiaoyu.promptship.common.BaseResponse;
 import com.xiaoyu.promptship.common.ResultUtils;
+import com.xiaoyu.promptship.constant.AppConstant;
+import com.xiaoyu.promptship.exception.BusinessException;
 import com.xiaoyu.promptship.exception.ErrorCode;
 import com.xiaoyu.promptship.exception.ThrowUtils;
 import com.xiaoyu.promptship.model.dto.AppChatContinueRequest;
@@ -16,6 +18,7 @@ import com.xiaoyu.promptship.model.entity.App;
 import com.xiaoyu.promptship.model.vo.AppVO;
 import com.xiaoyu.promptship.service.AppService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +26,6 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
-
 /**
  * 应用 控制层。
  *
@@ -128,6 +130,19 @@ public class AppController {
                                           HttpServletRequest httpRequest) {
         String deployUrl = appService.deployApp(request.getAppId(), httpRequest);
         return ResultUtils.success(deployUrl);
+    }
+
+    /**
+     * 下载应用项目源码压缩包（用户，仅本人可下载）。
+     *
+     * @param appId 应用 id
+     */
+    @GetMapping("/{appId}/download")
+    @AuthCheck
+    public void downloadAppProject(@PathVariable Long appId,
+                                    HttpServletRequest httpRequest,
+                                    HttpServletResponse response) {
+        appService.downloadAppProject(appId, httpRequest, response);
     }
 
     /**
