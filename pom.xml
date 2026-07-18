@@ -117,7 +117,12 @@
             <artifactId>cos_api</artifactId>
             <version>5.6.54</version>
         </dependency>
-
+        <!--  腾讯混元生图      -->
+        <dependency>
+            <groupId>com.tencentcloudapi</groupId>
+            <artifactId>tencentcloud-sdk-java-aiart</artifactId>
+            <version>3.1.1448</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>

@@ -12,6 +12,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.xiaoyu.promptship.ai.AiCodeGeneratorServiceFactory;
 import com.xiaoyu.promptship.ai.CodeGenRouterAgent;
+import com.xiaoyu.promptship.ai.model.ImageResource;
 import com.xiaoyu.promptship.constant.AppConstant;
 import com.xiaoyu.promptship.core.AiCodeGeneratorFacade;
 import com.xiaoyu.promptship.core.vue.VueProjectBuilder;
@@ -53,6 +54,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 应用 服务层实现。
@@ -241,32 +243,42 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      */
     @Override
     public SseEmitter chatUnifiedSse(AppCreateRequest request, HttpServletRequest httpRequest) {
-        // 1. AI 路由判断代码生成类型
-        CodeGenTypeEnum codeGenType = codeGenRouterAgent.route(request.getInitPrompt());
+        String originalPrompt = request.getInitPrompt();
+
+        // 1. AI 图片收集（Tool Calling，非流式）
+        List<ImageResource> images = aiCodeGeneratorServiceFactory.collectImages(originalPrompt);
+        log.info("图片收集完成: prompt='{}' → 收集 {} 张",
+                CharSequenceUtil.subPre(originalPrompt, 30), images.size());
+
+        // 2. 增强提示词（拼入图片素材信息）
+        String enhancedPrompt = buildEnhancedPrompt(originalPrompt, images);
+
+        // 3. AI 路由判断代码生成类型（使用原始 prompt，不受图片干扰）
+        CodeGenTypeEnum codeGenType = codeGenRouterAgent.route(originalPrompt);
         if (codeGenType == null) {
             codeGenType = CodeGenTypeEnum.VUE_APP;
         }
-        log.info("AI 路由结果: prompt='{}' → type={}", CharSequenceUtil.subPre(request.getInitPrompt(), 30), codeGenType.getValue());
+        log.info("AI 路由结果: prompt='{}' → type={}", CharSequenceUtil.subPre(originalPrompt, 30), codeGenType.getValue());
 
-        // 2. 创建应用并写入路由结果
+        // 4. 创建应用并写入路由结果
         User currentUser = userService.getLoginUser(httpRequest);
         long appId = createApp(request, httpRequest, codeGenType);
 
-        // 3. 保存用户消息
-        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, request.getInitPrompt());
+        // 5. 保存用户消息（存原始 prompt）
+        saveChatMessage(appId, currentUser.getId(), ChatHistoryRoleEnum.USER, originalPrompt);
 
-        // 4. 根据类型分流
+        // 6. 根据类型分流（代码生成使用增强 prompt）
         if (codeGenType == CodeGenTypeEnum.VUE_APP) {
             try {
                 vueSkeletonCopier.copySkeleton(appId);
             } catch (IOException e) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "项目骨架初始化失败");
             }
-            TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(request.getInitPrompt(), appId);
+            TokenStream stream = aiCodeGeneratorFacade.generateVueAppStream(enhancedPrompt, appId);
             return bridgeVueTokenStream(stream, appId, currentUser.getId(), codeGenType);
         } else {
             Flux<String> aiFlux = aiCodeGeneratorFacade.generateAndSaveCodeStreamForApp(
-                    request.getInitPrompt(), codeGenType, appId);
+                    enhancedPrompt, codeGenType, appId);
             return bridgeFluxToSse(aiFlux, appId, currentUser.getId(), codeGenType);
         }
     }
@@ -619,6 +631,22 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         );
 
         return emitter;
+    }
+
+    /**
+     * 将收集到的图片素材拼接到用户原始提示词，生成增强后的提示词。
+     * 图片按类别分组展示，方便 AI 在生成代码时选择对应图片。
+     */
+    private String buildEnhancedPrompt(String originalPrompt, List<ImageResource> images) {
+        if (images == null || images.isEmpty()) {
+            return originalPrompt;
+        }
+        String imageSection = images.stream()
+                .map(img -> String.format("[%s] %s | %s",
+                        img.getCategory().getValue(), img.getUrl(), img.getDescription()))
+                .collect(Collectors.joining("\n"));
+
+        return originalPrompt + "\n\n[图片素材] 请在生成代码时合理使用以下图片资源，根据类别选择合适的图片：\n" + imageSection;
     }
 
     /**

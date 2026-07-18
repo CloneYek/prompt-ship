@@ -2,9 +2,15 @@ package com.xiaoyu.promptship.ai;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.xiaoyu.promptship.ai.model.ImageResource;
 import com.xiaoyu.promptship.ai.tool.DependencyTool;
 import com.xiaoyu.promptship.ai.tool.FileTools;
+import com.xiaoyu.promptship.ai.tool.IconsApiTool;
+import com.xiaoyu.promptship.ai.tool.LogoGeneratorTool;
+import com.xiaoyu.promptship.ai.tool.PexelsImageTool;
+import com.xiaoyu.promptship.ai.tool.UndrawIllustrationTool;
 import com.xiaoyu.promptship.constant.AppConstant;
+import com.xiaoyu.promptship.manager.CosManager;
 import com.xiaoyu.promptship.service.ChatHistoryService;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -12,10 +18,13 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.service.AiServices;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * AI Service 工厂，管理 AI 服务的创建与缓存。
@@ -47,6 +56,27 @@ public class AiCodeGeneratorServiceFactory {
 
     @Resource
     private ChatHistoryService chatHistoryService;
+
+    @Resource
+    private CosManager cosManager;
+
+    @Value("${pexels.api-key}")
+    private String pexelsApiKey;
+
+    @Value("${iconsapi.app-key}")
+    private String iconsapiAppKey;
+
+    @Value("${undraw.build-id}")
+    private String undrawBuildId;
+
+    @Value("${tencentcloud.secret-id}")
+    private String tencentSecretId;
+
+    @Value("${tencentcloud.secret-key}")
+    private String tencentSecretKey;
+
+    @Value("${tencentcloud.region}")
+    private String tencentRegion;
 
     /**
      * Caffeine 缓存：appId → 绑定了独立 ChatMemory 的 AiCodeGeneratorService
@@ -94,6 +124,34 @@ public class AiCodeGeneratorServiceFactory {
         return AiServices.builder(CodeGenRouterAgent.class)
                 .chatModel(chatModel)
                 .build();
+    }
+
+    /**
+     * 创建图片收集 Agent 并执行一轮 Tool Calling 收集。
+     * 每次调用创建全新 Tool 实例，保证请求间图片列表隔离。
+     *
+     * @param userPrompt 用户原始提示词
+     * @return 收集到的所有图片资源列表
+     */
+    public List<ImageResource> collectImages(String userPrompt) {
+        PexelsImageTool pexelsTool = new PexelsImageTool(pexelsApiKey);
+        UndrawIllustrationTool undrawTool = new UndrawIllustrationTool(undrawBuildId);
+        IconsApiTool iconsTool = new IconsApiTool(iconsapiAppKey);
+        LogoGeneratorTool logoTool = new LogoGeneratorTool(tencentSecretId, tencentSecretKey, tencentRegion, cosManager);
+
+        ImageCollectionAgent agent = AiServices.builder(ImageCollectionAgent.class)
+                .chatModel(chatModel)
+                .tools(pexelsTool, undrawTool, iconsTool, logoTool)
+                .build();
+
+        agent.collectImages(userPrompt);
+
+        List<ImageResource> allImages = new ArrayList<>();
+        allImages.addAll(pexelsTool.drain());
+        allImages.addAll(undrawTool.drain());
+        allImages.addAll(iconsTool.drain());
+        allImages.addAll(logoTool.drain());
+        return allImages;
     }
 
     /**
