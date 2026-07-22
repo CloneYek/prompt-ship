@@ -139,7 +139,7 @@
             v-for="item in displayCases"
             :key="item.id || item.appName"
             class="case-card"
-            @click="goAppChat(item)"
+            @click="openAppPreview(item)"
           >
             <div class="case-cover">
               <img :src="getAppCover(item)" :alt="item.appName" /><span>{{
@@ -169,6 +169,7 @@ import {
   deleteMyApp,
   getAppCover,
   getAppCreatorInitial,
+  getGeneratedPreviewUrl,
   INITIAL_PROMPT_STORAGE_KEY,
   listGoodApps,
   listMyApps,
@@ -319,6 +320,22 @@ const goLogin = () => router.push('/user/login')
 const goMyApps = () => router.push('/app/my')
 const goAppChat = (app: AppVO) => {
   if (app.id) router.push('/app/' + app.id + '/chat')
+}
+const openAppPreview = (app: AppVO) => {
+  if (!app.id) {
+    message.warning('该案例暂时没有可预览的应用')
+    return
+  }
+  if (String(app.id).startsWith('demo-')) {
+    message.info('示例案例暂无真实预览页面')
+    return
+  }
+  const previewUrl = getGeneratedPreviewUrl(app.id, app.codeGenType)
+  if (!previewUrl) {
+    message.warning('该案例暂时没有可预览的应用')
+    return
+  }
+  window.open(previewUrl, '_blank', 'noopener,noreferrer')
 }
 const formatDate = (date?: string) => (date ? date.slice(0, 10) : '刚刚')
 

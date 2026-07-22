@@ -74,6 +74,11 @@ public class AppVO implements Serializable {
     private LoginUserVO user;
 
     /**
+     * 当前登录用户是否为该应用的创建者
+     */
+    private Boolean isOwner;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

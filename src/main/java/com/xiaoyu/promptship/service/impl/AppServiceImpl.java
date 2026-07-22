@@ -722,16 +722,21 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     }
 
     /**
-     * 根据 id 获取应用（脱敏）
+     * 根据 id 获取应用（脱敏），同时判断当前用户是否为应用创建者。
      *
-     * @param id 应用 id
-     * @return 脱敏后的应用信息
+     * @param id          应用 id
+     * @param httpRequest HTTP 请求
+     * @return 脱敏后的应用信息（isOwner 表示当前用户是否为创建者）
      */
     @Override
-    public AppVO getAppVOById(Long id) {
+    public AppVO getAppVOById(Long id, HttpServletRequest httpRequest) {
         App app = this.getById(id);
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
-        return buildAppVO(app);
+        AppVO vo = buildAppVO(app);
+        // 判断当前登录用户是否为应用创建者，前端据此展示"继续对话"或"仅预览"
+        User currentUser = userService.getLoginUser(httpRequest);
+        vo.setIsOwner(currentUser != null && currentUser.getId().equals(app.getUserId()));
+        return vo;
     }
 
     /**

@@ -156,15 +156,17 @@ public class AppController {
     }
 
     /**
-     * 根据 id 查看应用详情（用户）。
+     * 根据 id 查看应用详情（用户）。返回的 VO 中包含 isOwner 字段，
+     * 前端据此判断是展示完整功能（继续对话、部署）还是仅预览。
      *
      * @param id 应用 id
-     * @return 脱敏后的应用信息
+     * @return 脱敏后的应用信息（含 isOwner 标识）
      */
     @GetMapping("/get/vo/{id}")
     @AuthCheck
-    public BaseResponse<AppVO> getAppVOById(@PathVariable Long id) {
-        AppVO appVO = appService.getAppVOById(id);
+    public BaseResponse<AppVO> getAppVOById(@PathVariable Long id,
+                                             HttpServletRequest httpRequest) {
+        AppVO appVO = appService.getAppVOById(id, httpRequest);
         return ResultUtils.success(appVO);
     }
 

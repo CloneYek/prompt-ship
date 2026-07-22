@@ -52,6 +52,7 @@ declare namespace API {
     priority?: number
     userId?: number
     user?: LoginUserVO
+    isOwner?: boolean
     createTime?: string
     updateTime?: string
   }

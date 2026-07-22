@@ -1,14 +1,12 @@
-CLAUDE.md
 todo.md
 target/
 .mvn/wrapper/maven-wrapper.jar
+.workbuddy
 !**/src/main/**/target/
 !**/src/test/**/target/
 tmp
 !**/src/main/resources/template/*.json
 !**/src/main/resources/banner.txt
-docs
-
 ### CUSTOM ###
 application-local.yml
 **/src/main/resources/template/1.json

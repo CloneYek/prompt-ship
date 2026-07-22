@@ -68,12 +68,13 @@ public interface AppService extends IService<App> {
     boolean deleteApp(Long id, HttpServletRequest httpRequest);
 
     /**
-     * 根据 id 获取应用（脱敏）
+     * 根据 id 获取应用（脱敏），同时校验当前用户是否为应用创建者。
      *
-     * @param id 应用 id
-     * @return 脱敏后的应用信息
+     * @param id          应用 id
+     * @param httpRequest HTTP 请求（用于获取当前登录用户）
+     * @return 脱敏后的应用信息（含 isOwner 标识）
      */
-    AppVO getAppVOById(Long id);
+    AppVO getAppVOById(Long id, HttpServletRequest httpRequest);
 
     /**
      * 分页获取当前用户的应用列表（脱敏，支持根据名称查询，每页最多 20 个）
