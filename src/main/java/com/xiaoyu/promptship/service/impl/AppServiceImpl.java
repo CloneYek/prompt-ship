@@ -120,10 +120,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         User currentUser = userService.getLoginUser(httpRequest);
 
         App app = new App();
-        //暂时默认appName为提示词的前12位
+        // 用户显式传名优先，否则从提示词按本地规则生成默认名称
         String appName = CharSequenceUtil.isNotBlank(request.getAppName())
                 ? request.getAppName()
-                : CharSequenceUtil.subPre(request.getInitPrompt(), 12);
+                : generateDefaultAppName(request.getInitPrompt());
         app.setAppName(appName);
         app.setInitPrompt(request.getInitPrompt());
         app.setUserId(currentUser.getId());
@@ -397,6 +397,20 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                     safeSend(emitter, SseEmitter.event().data(toJson(Map.of(
                             "b", result.success() ? "ok" : "fail",
                             "msg", result.message()))));
+
+                    // 异步生成应用封面截图（使用 code_output 预览地址，不依赖部署）
+                    // 旧端点可能传入 null，暂时从数据库回退查询 codeGenType
+                    CodeGenTypeEnum resolvedType = codeGenType;
+                    if (resolvedType == null) {
+                        App app = this.getById(appId);
+                        resolvedType = app != null && app.getCodeGenType() != null
+                                ? CodeGenTypeEnum.getEnumByValue(app.getCodeGenType())
+                                : CodeGenTypeEnum.VUE_APP;
+                    }
+                    String previewUrl = "http://localhost:8123/api/static/"
+                            + resolvedType.getValue() + "_" + appId + "/";
+                    generateAppScreenshotAsync(appId, previewUrl);
+
                     safeSend(emitter, SseEmitter.event().name("done").data(""));
                     emitter.complete();
                 })
@@ -523,9 +537,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
         String deployUrl = AppConstant.CODE_DEPLOY_HOST + "/" + deployKey + "/";
 
-        // 9. 异步生成截图并更新应用封面（使用 Spring Boot 本地端点，不依赖外部 Nginx）
-        String screenshotUrl = "http://localhost:8123/api/static/" + deployKey + "/";
-        generateAppScreenshotAsync(appId, screenshotUrl);
+        // 9. 截图已在代码生成完成后异步触发，此处无需重复调用
         return deployUrl;
     }
 
@@ -610,9 +622,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         Flux.concat(
                 Flux.just(buildInit(appId), buildRoute(codeGenType)),
                 flux.doOnNext(aiResponseBuilder::append).map(this::buildChunk)
-        ).doOnComplete(() ->
-                saveChatMessage(appId, userId, ChatHistoryRoleEnum.ASSISTANT, aiResponseBuilder.toString())
-        ).subscribe(
+        ).doOnComplete(() -> {
+                saveChatMessage(appId, userId, ChatHistoryRoleEnum.ASSISTANT, aiResponseBuilder.toString());
+                // 异步生成应用封面截图（使用 code_output 预览地址）
+                String previewUrl = "http://localhost:8123/api/static/" + codeGenType.getValue() + "_" + appId + "/";
+                generateAppScreenshotAsync(appId, previewUrl);
+        }).subscribe(
                 chunk -> {
                     try {
                         emitter.send(SseEmitter.event().data(chunk));
@@ -637,6 +652,42 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
      * 将收集到的图片素材拼接到用户原始提示词，生成增强后的提示词。
      * 图片按类别分组展示，方便 AI 在生成代码时选择对应图片。
      */
+
+    /**
+     * 根据用户初始提示词生成默认应用名称。
+     * 规则链：取首句 → 去掉前缀动词 → 疑问句转陈述句式 → 截断 → 兜底。
+     * 此为本地轻量规则（v1），后续可替换为 AI 命名。
+     */
+    private String generateDefaultAppName(String initPrompt) {
+        if (CharSequenceUtil.isBlank(initPrompt)) {
+            return "未命名应用";
+        }
+        // 1. 取第一个分句（按常见分隔符切割）
+        String first = initPrompt.split("[，,。！？\\n]")[0].trim();
+        // 2. 去掉前缀动词/礼貌用语（长组合优先）
+        first = first.replaceFirst(
+                "^(请帮我做一个|请帮我生成一个|请帮我创建|帮我做一个|帮我生成一个|帮我创建|"
+                        + "生成一个|创建一个|制作一个|做一个|写一个|"
+                        + "帮我做|帮我|生成|创建|制作|写|请|帮忙|给我|介绍下|介绍)\\s*",
+                "");
+        first = first.trim();
+        // 3. 疑问句式 → 陈述句式
+        first = first.replaceAll("^(.+)是什么(意思)?$", "$1简介");
+        first = first.replaceAll("^(.+)怎么做$", "$1制作指南");
+        first = first.replaceAll("^(.+)如何(制作|创建|搭建)$", "$1$2指南");
+        first = first.replaceAll("^(.+)和(.+)的区别(是什么)?$", "$1与$2对比");
+        first = first.replaceAll("^(.+)和(.+)哪个好$", "$1与$2对比");
+        // 4. 清洗后为空则回退到原始首句，仍为空则兜底
+        if (first.isEmpty()) {
+            first = initPrompt.split("[，,。！？\\n]")[0].trim();
+        }
+        if (first.isEmpty()) {
+            return "未命名应用";
+        }
+        // 5. 截取合理长度
+        return CharSequenceUtil.subPre(first, 18);
+    }
+
     private String buildEnhancedPrompt(String originalPrompt, List<ImageResource> images) {
         if (images == null || images.isEmpty()) {
             return originalPrompt;

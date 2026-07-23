@@ -69,13 +69,6 @@
                     <strong>{{ getBuildCardTitle(chatMessage.buildResult) }}</strong>
                   </div>
                   <p>{{ getBuildCardDescription(chatMessage.buildResult) }}</p>
-                  <pre
-                    v-if="
-                      chatMessage.buildResult.status === 'fail' && chatMessage.buildResult.message
-                    "
-                    class="build-log"
-                    >{{ chatMessage.buildResult.message }}</pre
-                  >
                 </section>
               </div>
             </div>
@@ -336,7 +329,7 @@ const getBuildCardTitle = (result: ChatBuildResult) =>
 const getBuildCardDescription = (result: ChatBuildResult) =>
   result.status === 'ok'
     ? '后端已完成 npm install 和 npm build，预览页面可以刷新查看。'
-    : '后端构建时遇到错误，下面展示后端返回的关键信息。'
+    : 'Vue 项目构建失败，请调整需求后重试，或联系管理员查看日志。'
 
 const parseAssistantSteps = (content: string): AssistantStep[] => {
   const normalizedContent = content.trim()

@@ -41,7 +41,7 @@
 - **应用 CRUD**: 创建、编辑、删除、查询应用
 - **一键部署**: 生成代码一键部署到 Nginx 静态服务，支持在线预览
 - **项目下载**: 支持下载应用源码压缩包
-- **精选展示**: 优先级 > 0 的应用在首页精选展示
+- **精选展示**: 优先级 > 0 的应用在首页案例广场展示，点击在新窗口预览应用页面（非本人应用不进入对话页）
 
 ### 用户体系
 
@@ -206,13 +206,21 @@ prompt-ship/
 ├── sql/
 │   └── create_table.sql               # 数据库建表脚本
 ├── docs/
-│   ├── architecture.svg               # 系统架构图
-│   ├── workflow.svg                   # 核心工作流图
-│   ├── 接口文档.md                     # API 接口文档
-│   ├── 前端对接说明-Vue工程化生成.md     # Vue 模式对接说明
-│   └── 一次完整的运行日志.md            # 运行日志参考
+│   ├── 项目总览.md                        # 项目全局概述
+│   ├── 后端架构与开发规范.md               # 后端分层与编码约定
+│   ├── 前端架构与开发规范.md               # Vue 3 + Ant Design Vue 规范
+│   ├── AI生成链路与SSE协议.md             # 全链路流程与事件协议
+│   ├── 文档治理规范.md                     # 文档目录结构与命名规则
+│   ├── 本地运行与验证.md                   # 本地环境搭建指南
+│   ├── 接口文档.md                        # API 接口文档
+│   ├── 前端对接说明-Vue工程化生成.md        # Vue 模式对接说明
+│   ├── bugs/                              # 缺陷复盘（BUG-YYYYMMDD-XX-*.md）
+│   ├── designs/                           # 技术方案（DESIGN-YYYYMMDD-XX-*.md）
+│   ├── notes/                             # 学习笔记（NOTE-YYYYMMDD-XX-*.md）
+│   ├── progress/                          # 开发进度（PROG-YYYYMMDD.md）
+│   └── requirements/                      # 需求文档（REQ-YYYYMMDD-XX-*.md）
 ├── pom.xml                            # Maven 配置
-└── CLAUDE.md                          # AI Agent 协作指南
+└── AGENTS.md                          # AI Agent 行为边界与文档读取规则
 ```
 
 ---
@@ -290,6 +298,7 @@ Nginx 监听端口 80，根目录设为 `tmp/code_deploy/`。
 | 代码生成管道 | Facade → Parser → Saver | 模板方法模式，可扩展新生成类型 |
 | Vue 工程化 | Tool Calling + Skeleton | AI 像开发者一样逐步创建项目文件 |
 | 路径安全 | FileTools 路径穿越防护 | AI 生成的文件路径校验，防止越权写入 |
+| 对话安全 | 对话历史归属校验 + isOwner 标识 | ChatHistory 接口校验 app 归属，AppVO 标识创建者，前端据此切换 UI |
 
 ---
 
